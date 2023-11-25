@@ -1,8 +1,9 @@
-use tiny_serde::{prelude::*, Serialize, Deserialize};
-use tiny_serde_macros::{Serialize, Deserialize};
+use tiny_serde::{prelude::*, Deserialize, Serialize};
+use tiny_serde_macros::{Deserialize, Serialize};
 
 // types
 pub type CRCRepr = u8;
+pub type CommandID = u8;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]

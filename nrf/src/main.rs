@@ -18,28 +18,47 @@ use embassy_nrf::{
 };
 
 mod ble;
-mod bundles;
 mod command_ext;
 mod command_reader;
 mod command_writer;
 mod fmt;
-mod scan_buf;
 mod uart;
 
 use ble::BLE;
-use command_reader::{receive_command_worker, HeadlightCommandReader};
-use command_writer::{send_command_worker, HeadlightCommandWriter, WriterQueue};
-use common::types::CRCRepr;
-use crc::{Crc, CRC_8_AUTOSAR};
-use uart::UART;
-
-pub const CRC: Crc<CRCRepr> = Crc::<CRCRepr>::new(&CRC_8_AUTOSAR);
+use command_reader::receive_command_worker;
+use command_writer::{send_command_worker, WriterQueue};
+use common::{
+    assign_resources, command_reader::HeadlightCommandReader,
+    command_writer::HeadlightCommandWriter,
+};
+use cortex_m::peripheral::SCB;
+use cortex_m_rt::exception;
+use embassy_nrf::peripherals;
+use uart::setup_uart;
 
 static SEND_QUEUE: WriterQueue = WriterQueue::new();
+
+#[cfg(not(feature = "defmt"))]
+#[exception]
+unsafe fn DefaultHandler(_irqn: i16) -> ! {
+    SCB::sys_reset()
+}
 
 bind_interrupts!(struct Irqs {
     UARTE0_UART0 => buffered_uarte::InterruptHandler<UARTE0>;
 });
+
+assign_resources! {
+    pub serial: SerialResource {
+        uart: UARTE0,
+        timer: TIMER1,
+        ppi0: PPI_CH0,
+        ppi1: PPI_CH1,
+        ppi_group: PPI_GROUP0,
+        rx: P1_12,
+        tx: P1_11
+    }
+}
 
 fn setup_interrupts(config: &mut PeripheralConfig) {
     config.gpiote_interrupt_priority = interrupt::Priority::P2;
@@ -54,17 +73,9 @@ async fn main(spawner: Spawner) -> ! {
     setup_interrupts(&mut peripheral_config);
 
     let p = embassy_nrf::init(peripheral_config);
+    let r = split_resources!(p);
 
-    let (rx, tx) = UART::init(
-        p.UARTE0,
-        p.TIMER1,
-        p.PPI_CH0,
-        p.PPI_CH1,
-        p.PPI_GROUP0,
-        p.P1_12,
-        p.P1_11,
-        Baudrate::BAUD9600,
-    );
+    let (rx, tx) = setup_uart(r.serial, Baudrate::BAUD9600);
 
     let reader = HeadlightCommandReader::new(rx);
     let writer = HeadlightCommandWriter::new(tx);

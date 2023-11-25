@@ -72,62 +72,66 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use cortex_m_rt::entry;
+use command::reader::receive_command_worker;
+use command::writer::{send_command_worker, WriterQueue};
+use cortex_m::peripheral::SCB;
+use cortex_m_rt::{entry, exception};
+use embassy_stm32::gpio::Output;
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 use static_cell::StaticCell;
+use utils::{
+    adc::setup_adc, hb::setup_hb, regulation::regulation_worker, status::setup_status,
+    uart::setup_uart,
+};
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use common::assign_resources;
-use core::cmp::min;
+use common::{
+    assign_resources, command_reader::HeadlightCommandReader,
+    command_writer::HeadlightCommandWriter,
+};
 use embassy_executor::{Executor, InterruptExecutor};
-use embassy_stm32::interrupt;
 use embassy_stm32::{
-    adc::{self, Adc, AdcPin, Vref},
-    bind_interrupts,
-    gpio::{Level, Output, OutputType, Speed},
+    adc, bind_interrupts,
     interrupt::{InterruptExt, Priority},
     peripherals::{self, ADC, PA12, PA6, TIM1, USART1},
     rcc,
-    time::{khz, mhz},
-    timer::{
-        complementary_pwm::{ComplementaryPwm, ComplementaryPwmPin},
-        simple_pwm::PwmPin,
-        Channel as PwmChannel, CountingMode,
-    },
-    usart::BufferedUart,
+    time::mhz,
     Config as PeripheralConfig,
 };
-use embassy_time::{Delay, Duration, Ticker};
+use embassy_stm32::{interrupt, usart};
 
-mod commands_ext;
+mod command;
 mod fmt;
-mod pid;
-mod uart;
+mod utils;
 
-use crate::fmt::{error, info};
-use pid::PIDController;
+#[cfg(not(feature = "defmt"))]
+#[exception]
+unsafe fn DefaultHandler(_irqn: i16) -> ! {
+    SCB::sys_reset()
+}
 
 bind_interrupts!(struct Irqs {
     ADC1 => adc::InterruptHandler<ADC>;
+    USART1 => usart::BufferedInterruptHandler<USART1>;
 });
 
 assign_resources! {
-    status: StatusResources {
+    pub status: StatusResources {
         led: PA6 = StatusPin
     }
-    feedback: FeedbackResources {
-        adc: ADC,
-        sense: PA2
+    pub measure: MeasureResources {
+        cur_sense: PA2,
+        temp: PA5
     }
-    hb: HalfBridgeResources {
+    pub hb: HalfBridgeResources {
         timer: TIM1 = PWMTimer,
         control: PA8,
         sync: PA7,
         enable: PA12 = HBEnablePin
     }
-    serial: SerialResources {
+    pub serial: SerialResources {
         uart: USART1,
         rx: PA10,
         tx: PA9
@@ -137,7 +141,8 @@ assign_resources! {
 static PRIORITY_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 static NORMAL_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
-static UART: StaticCell<BufferedUart<'static, USART1>> = StaticCell::new();
+static SEND_QUEUE: WriterQueue = WriterQueue::new();
+static STATUS: StaticCell<Output<'static, StatusPin>> = StaticCell::new();
 
 const TARGET_MA: u16 = 50;
 const ABS_MAX_MA: u16 = 100;
@@ -150,166 +155,42 @@ unsafe fn I2C1() {
     PRIORITY_EXECUTOR.on_interrupt()
 }
 
-#[allow(non_snake_case)]
-fn adc_to_mV(sample: u16, vref: u16) -> Option<u16> {
-    // From https://www.st.com/resource/en/datasheet/stm32f031c6.pdf
-    // 6.3.4 Embedded reference voltage
-    const VREFINT_MV: u32 = 1230; // mV
-
-    u16::try_from(
-        u32::try_from(sample)
-            .ok()?
-            .checked_mul(VREFINT_MV)?
-            .checked_div(u32::try_from(vref).ok()?)?,
-    )
-    .ok()
-}
-
-#[allow(non_snake_case)]
-fn mV_to_mA(mv: u16) -> Option<u16> {
-    const GAIN: u16 = 10;
-    const R_SHUNT: u16 = 33;
-
-    mv.checked_mul(GAIN)?.checked_div(R_SHUNT)
-}
-
-async fn get_current<'a, P>(adc: &mut Adc<'a, ADC>, vref: &mut Vref, sense_p: &mut P) -> Option<u16>
-where
-    P: AdcPin<ADC>,
-{
-    let vref_sample = adc.read(vref).await;
-    let raw = adc.read(sense_p).await;
-
-    mV_to_mA(adc_to_mV(raw, vref_sample)?)
-}
-
-#[embassy_executor::task]
-async fn run_comms() {}
-
-fn shutdown<'a>(
-    mut pwm: ComplementaryPwm<'a, PWMTimer>,
-    mut enable: Output<'static, HBEnablePin>,
-    mut status: Output<'static, StatusPin>,
-    reason: &str,
-) {
-    enable.set_low();
-    pwm.disable(PwmChannel::Ch1);
-    status.set_high();
-
-    error!(
-        "The current state was determined to be unsafe for reason: {}. Shutting down.",
-        reason
-    );
-}
-
-fn setup_adc<'a>(hw_adc: ADC) -> (Adc<'a, ADC>, Vref) {
-    let mut adc = Adc::new(hw_adc, Irqs, &mut Delay);
-    adc.set_resolution(adc::Resolution::TwelveBit);
-    adc.set_sample_time(adc::SampleTime::Cycles13_5);
-
-    let vref = adc.enable_vref(&mut Delay);
-
-    (adc, vref)
-}
-
-fn setup_hb<'a>(
-    hb: HalfBridgeResources,
-) -> (ComplementaryPwm<'a, PWMTimer>, Output<'a, HBEnablePin>) {
-    let control = PwmPin::new_ch1(hb.control, OutputType::PushPull);
-    let sync = ComplementaryPwmPin::new_ch1(hb.sync, OutputType::PushPull);
-
-    let pwm = ComplementaryPwm::new(
-        hb.timer,
-        Some(control),
-        Some(sync),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        khz(PWM_FREQ.into()),
-        CountingMode::EdgeAlignedUp,
-    );
-
-    let enable = Output::new(hb.enable, Level::Low, Speed::Low);
-
-    (pwm, enable)
-}
-
-#[embassy_executor::task]
-async fn run_loop(mut f: FeedbackResources, hb: HalfBridgeResources, s: StatusResources) {
-    let status = Output::new(s.led, Level::Low, Speed::Low);
-
-    let (mut adc, mut vref) = setup_adc(f.adc);
-    let (mut pwm, mut enable) = setup_hb(hb);
-
-    let max_duty = pwm.get_max_duty() - 1;
-    let min_duty = 1;
-    info!("min/max duty: {}/{}", min_duty, max_duty);
-
-    enable.set_high();
-    pwm.enable(PwmChannel::Ch1);
-
-    let mut duty = 1;
-
-    let mut pid = PIDController::<i32>::new(10, 4, 0, (PWM_FREQ).into(), PWM_FREQ.into());
-
-    let mut ticker = Ticker::every(Duration::from_ticks(4));
-
-    let reason = loop {
-        if let Some(current) = get_current(&mut adc, &mut vref, &mut f.sense).await {
-            // check for fault
-
-            if current > ABS_MAX_MA + EPSILON {
-                // current is sufficiently over target to be considered unsafe
-                break "overcurrent";
-            } else if current < TARGET_MA && duty == max_duty {
-                // current is low at max duty (load is disconnected or supply voltage is too low)
-                break "invariant load";
-            } else if duty < min_duty {
-                // if too small duty is determined to be needed to achieve target current the load or supply is too volatile
-                break "hypervariant load";
-            }
-
-            // update pid/pwm
-
-            if let Some(delta) = pid.run(TARGET_MA.into(), current.into()) {
-                duty = min(max_duty, duty.saturating_add_signed(delta));
-            } else {
-                break "arithmetic error (pid)";
-            }
-
-            pwm.set_duty(PwmChannel::Ch1, duty);
-
-            // wait for next tick
-            ticker.next().await;
-        } else {
-            break "arithmentic error (adc)";
-        }
-    };
-
-    shutdown(pwm, enable, status, reason);
-}
-
 #[entry]
 fn main() -> ! {
+    // interrupts
+    interrupt::I2C1.set_priority(Priority::P1);
+    interrupt::USART1.set_priority(Priority::P2);
+
+    // config rcc
     let mut rcc_config = rcc::Config::default();
     rcc_config.sys_ck = mhz(48).into();
 
+    // config peripherals
     let mut peripheral_config = PeripheralConfig::default();
     peripheral_config.rcc = rcc_config;
 
+    // distribute peripherals
     let p = embassy_stm32::init(peripheral_config);
     let r = split_resources!(p);
 
-    interrupt::I2C1.set_priority(Priority::P2);
-    let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
-    spawner.must_spawn(run_loop(r.feedback, r.hb, r.status));
+    // setup peripherals
+    let (adc, vref) = setup_adc(p.ADC);
+    let (pwm, enable) = setup_hb(r.hb);
+    let (tx, rx) = setup_uart(r.serial, 9600);
+    let status = STATUS.init(setup_status(r.status));
 
-    // low priority
+    // setup command reader/writer
+    let reader = HeadlightCommandReader::new(rx);
+    let writer = HeadlightCommandWriter::new(tx);
+
+    // start high priority executor for regulation
+    let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
+    spawner.must_spawn(regulation_worker(adc, vref, pwm, enable, status, r.measure));
+
+    // start low priority executor for comms
     let executor = NORMAL_EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(run_comms());
+        spawner.must_spawn(receive_command_worker(reader));
+        spawner.must_spawn(send_command_worker(writer, &SEND_QUEUE));
     });
 }

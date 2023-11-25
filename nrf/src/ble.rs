@@ -1,9 +1,8 @@
 use crate::{
-    bundles::SendBundle,
-    fmt::{error, info, unwrap}, command_writer::WriterQueue,
+    command_writer::WriterQueue,
+    fmt::{error, info, unwrap},
 };
-use common::{commands::*, types::AppErrorData};
-use static_cell::StaticCell;
+use common::{bundles::ToHeadlightBundle, commands::*, types::AppErrorData};
 use core::mem;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
@@ -11,6 +10,7 @@ use nrf_softdevice::{
     ble::{gatt_server, peripheral as ble_peripheral, Connection, Phy},
     generate_adv_data, raw, Softdevice,
 };
+use static_cell::StaticCell;
 use tiny_serde::{Deserialize, Serialize};
 
 const ADV_DATA: &[u8] = generate_adv_data! {
@@ -62,12 +62,16 @@ pub struct Server {
 pub struct BLE {
     sd: &'static Softdevice,
     conn: Mutex<ThreadModeRawMutex, Option<Connection>>,
-    server: Server
+    server: Server,
 }
 
 impl BLE {
     const fn new(sd: &'static Softdevice, server: Server) -> Self {
-        Self { sd, conn: Mutex::new(None), server }
+        Self {
+            sd,
+            conn: Mutex::new(None),
+            server,
+        }
     }
 
     pub async fn init(spawner: &Spawner) -> &'static Self {
@@ -125,7 +129,8 @@ impl BLE {
         };
 
         loop {
-            let conn = unwrap!(ble_peripheral::advertise_connectable(self.sd, ADV, &adv_config).await);
+            let conn =
+                unwrap!(ble_peripheral::advertise_connectable(self.sd, ADV, &adv_config).await);
 
             self.set_conn(Some(conn.clone())).await;
 
@@ -133,15 +138,15 @@ impl BLE {
 
             let e = gatt_server::run(&conn, &self.server, |e| match e {
                 ServerEvent::Headlight(e) => {
-                    let bundle: Option<SendBundle> = match e {
+                    let bundle: Option<ToHeadlightBundle> = match e {
                         HeadlightServiceEvent::RequestWrite(data) => {
-                            RequestCommand::deserialize(data).map(SendBundle::RequestCommand)
+                            RequestCommand::deserialize(data).map(ToHeadlightBundle::RequestCommand)
                         }
                         HeadlightServiceEvent::BrightnessWrite(data) => {
-                            BrightnessCommand::deserialize(data).map(SendBundle::BrightnessCommand)
+                            BrightnessCommand::deserialize(data).map(ToHeadlightBundle::BrightnessCommand)
                         }
                         HeadlightServiceEvent::PidWrite(data) => {
-                            PIDCommand::deserialize(data).map(SendBundle::PIDCommand)
+                            PIDCommand::deserialize(data).map(ToHeadlightBundle::PIDCommand)
                         }
                         _ => return
                     };

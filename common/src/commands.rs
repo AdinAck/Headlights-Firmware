@@ -1,15 +1,15 @@
-use crate::types::{CRCRepr, ErrorData, StateData};
-use tiny_serde::{prelude::*, Serialize, Deserialize};
-use tiny_serde_macros::{Serialize, Deserialize};
+use crate::types::{CRCRepr, CommandID, ErrorData, StateData};
+use tiny_serde::{prelude::*, Deserialize, Serialize};
+use tiny_serde_macros::{Deserialize, Serialize};
 
 pub trait HeadlightCommand {
-    const ID: u8;
+    const ID: CommandID;
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct CommandHeader {
-    pub id: u8,
-    pub crc: CRCRepr
+    pub id: CommandID,
+    pub crc: CRCRepr,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub enum RequestCommand {
 }
 
 impl HeadlightCommand for RequestCommand {
-    const ID: u8 = 0x10;
+    const ID: CommandID = 0x10;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -33,7 +33,7 @@ pub struct StatusCommand {
 }
 
 impl HeadlightCommand for StatusCommand {
-    const ID: u8 = 0x1f;
+    const ID: CommandID = 0x1f;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -42,7 +42,7 @@ pub struct BrightnessCommand {
 }
 
 impl HeadlightCommand for BrightnessCommand {
-    const ID: u8 = 0xaa;
+    const ID: CommandID = 0xaa;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,7 +53,7 @@ pub struct MonitorCommand {
 }
 
 impl HeadlightCommand for MonitorCommand {
-    const ID: u8 = 0xab;
+    const ID: CommandID = 0xab;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,5 +65,5 @@ pub struct PIDCommand {
 }
 
 impl HeadlightCommand for PIDCommand {
-    const ID: u8 = 0xac;
+    const ID: CommandID = 0xac;
 }

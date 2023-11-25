@@ -1,65 +1,45 @@
-use core::mem::MaybeUninit;
-
 use embassy_nrf::{
     buffered_uarte::{Baudrate, BufferedUarte, BufferedUarteRx, BufferedUarteTx},
-    gpio::Pin,
     peripherals::{TIMER1, UARTE0},
-    ppi::{ConfigurableChannel, Group as PPIGroup},
     uarte,
 };
+use static_cell::StaticCell;
 
-use crate::Irqs;
+use crate::{Irqs, SerialResource};
 
 pub const BUF_SIZE: usize = 64;
 
-static mut RX_BUF: [u8; BUF_SIZE] = [0u8; BUF_SIZE];
-static mut TX_BUF: [u8; BUF_SIZE] = [0u8; BUF_SIZE];
+static RX_BUF: StaticCell<[u8; BUF_SIZE]> = StaticCell::new();
+static TX_BUF: StaticCell<[u8; BUF_SIZE]> = StaticCell::new();
 
-static mut GLOBAL_UART: MaybeUninit<BufferedUarte<'static, UARTE0, TIMER1>> = MaybeUninit::uninit();
+static GLOBAL_UART: StaticCell<BufferedUarte<'static, UARTE0, TIMER1>> = StaticCell::new();
 
-pub struct UART {}
+pub fn setup_uart(
+    serial: SerialResource,
+    baudrate: Baudrate,
+) -> (
+    BufferedUarteRx<'static, 'static, UARTE0, TIMER1>,
+    BufferedUarteTx<'static, 'static, UARTE0, TIMER1>,
+) {
+    let mut uart_config = uarte::Config::default();
+    uart_config.baudrate = baudrate;
 
-impl UART {
-    pub fn init<PPICHA, PPICHB, PPIGroupA, Rx, Tx>(
-        uarte: UARTE0,
-        tim: TIMER1,
-        ppi0: PPICHA,
-        ppi1: PPICHB,
-        ppi_group: PPIGroupA,
-        rx_pin: Rx,
-        tx_pin: Tx,
-        baudrate: Baudrate,
-    ) -> (
-        BufferedUarteRx<'static, 'static, UARTE0, TIMER1>,
-        BufferedUarteTx<'static, 'static, UARTE0, TIMER1>,
-    )
-    where
-        PPICHA: ConfigurableChannel,
-        PPICHB: ConfigurableChannel,
-        PPIGroupA: PPIGroup,
-        Rx: Pin,
-        Tx: Pin,
-    {
-        let mut uart_config = uarte::Config::default();
-        uart_config.baudrate = baudrate;
+    let rx_buf = RX_BUF.init([0; BUF_SIZE]);
+    let tx_buf = TX_BUF.init([0; BUF_SIZE]);
 
-        // buffers are independent so this is safe
-        unsafe {
-            GLOBAL_UART.write(BufferedUarte::new(
-                uarte,
-                tim,
-                ppi0,
-                ppi1,
-                ppi_group,
-                Irqs,
-                rx_pin,
-                tx_pin,
-                uart_config,
-                &mut RX_BUF,
-                &mut TX_BUF,
-            ))
-        };
+    let uart = GLOBAL_UART.init(BufferedUarte::new(
+        serial.uart,
+        serial.timer,
+        serial.ppi0,
+        serial.ppi1,
+        serial.ppi_group,
+        Irqs,
+        serial.rx,
+        serial.tx,
+        uart_config,
+        rx_buf,
+        tx_buf,
+    ));
 
-        unsafe { GLOBAL_UART.assume_init_mut() }.split()
-    }
+    uart.split()
 }
