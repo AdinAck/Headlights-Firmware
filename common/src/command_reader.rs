@@ -1,12 +1,12 @@
 use crate::{
     commands::CommandHeader,
-    fmt::{error, unwrap, warn},
+    fmt::{error, warn},
     scan_buf::ScanBuf,
     types::{CRCRepr, CommandID},
     CRC,
 };
 use crc::Digest;
-use embedded_io_async::BufRead;
+use embedded_io_async::{BufRead, ErrorType};
 use pattern::{Pattern, PatternError};
 
 pub trait ParseCommandBundle
@@ -41,8 +41,8 @@ where
         }
     }
 
-    pub async fn poll(&mut self) {
-        let incoming = unwrap!(self.rx.fill_buf().await);
+    pub async fn poll(&mut self) -> Result<(), <HWReader as ErrorType>::Error> {
+        let incoming = self.rx.fill_buf().await?;
         let n = incoming.len();
 
         if self.buf.push_slice(incoming).is_err() {
@@ -51,6 +51,8 @@ where
         }
 
         self.rx.consume(n);
+
+        Ok(())
     }
 
     fn try_parse_cmd<Bundle>(&mut self) -> Result<ParsedCommand<Bundle>, PatternError>

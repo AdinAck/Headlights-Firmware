@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-defmt = []
+defmt = [
+    "embedded-io-async/defmt-03"
+]
 
 [dependencies]
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
@@ -14,3 +16,4 @@ bundle = { git = "https://github.com/AdinAck/bundle", branch = "development" }
 embedded-io-async = "0.6.0"
 crc = "3.0.1"
 heapless = "0.8.0"
+defmt = "0.3"

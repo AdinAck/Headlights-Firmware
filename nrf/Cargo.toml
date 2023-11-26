@@ -18,7 +18,8 @@ defmt = [
     "embassy-time/defmt",
     "embassy-time/defmt-timestamp-uptime",
     "nrf-softdevice/defmt",
-    "pattern/defmt"
+    "pattern/defmt",
+    "common/defmt"
 ]
 
 ble-l2cap = ["nrf-softdevice/ble-l2cap"]

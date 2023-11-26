@@ -1,9 +1,8 @@
 use crate::{
     commands::{CommandHeader, HeadlightCommand},
-    fmt::unwrap,
     CRC,
 };
-use embedded_io_async::Write;
+use embedded_io_async::{ErrorType, Write};
 use tiny_serde::Serialize;
 
 pub struct HeadlightCommandWriter<HWWriter> {
@@ -18,7 +17,10 @@ where
         Self { tx }
     }
 
-    pub async fn send<C, const N: usize>(&mut self, cmd: C)
+    pub async fn send<C, const N: usize>(
+        &mut self,
+        cmd: C,
+    ) -> Result<(), <HWWriter as ErrorType>::Error>
     where
         C: HeadlightCommand + Serialize<N>,
     {
@@ -33,7 +35,9 @@ where
             crc: digest.finalize(),
         };
 
-        unwrap!(self.tx.write(&header.serialize()).await);
-        unwrap!(self.tx.write(&payload).await);
+        self.tx.write(&header.serialize()).await?;
+        self.tx.write(&payload).await?;
+
+        Ok(())
     }
 }

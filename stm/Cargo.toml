@@ -13,6 +13,7 @@ defmt = [
     "embassy-executor/defmt",
     "embassy-time/defmt",
     "embassy-time/defmt-timestamp-uptime",
+    "common/defmt"
 ]
 
 [dependencies]
@@ -31,6 +32,8 @@ static_cell = "2.0.0"
 portable-atomic = { version = "1.5.1", features = ["critical-section"] }
 common = { path = "../common" }
 pid = { git = "https://github.com/AdinAck/pid", branch = "main" }
+tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
+tiny-serde-macros = { git = "https://github.com/AdinAck/tiny-serde-macros", branch = "main" }
 
 [[bin]]
 name = "stm"

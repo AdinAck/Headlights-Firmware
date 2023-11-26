@@ -1,4 +1,9 @@
-use crate::{ble::BLE, command_ext::Execute, fmt::warn, uart::BUF_SIZE};
+use crate::{
+    ble::BLE,
+    command_ext::Execute,
+    fmt::{error, warn},
+    uart::BUF_SIZE,
+};
 use common::{bundles::FromHeadlightBundle, command_reader::*, use_from_headlight_bundle};
 use embassy_nrf::{
     buffered_uarte::BufferedUarteRx,
@@ -11,7 +16,10 @@ pub async fn receive_command_worker(
     ble: &'static BLE,
 ) {
     loop {
-        reader.poll().await;
+        if let Err(e) = reader.poll().await {
+            error!("Command reader failed to poll with error: {}", e);
+            // inform client on BLE
+        }
 
         if let Some(bundle) = reader.recognizes() {
             use_from_headlight_bundle!(bundle, |cmd| {

@@ -11,7 +11,7 @@ use nrf_softdevice::{
     generate_adv_data, raw, Softdevice,
 };
 use static_cell::StaticCell;
-use tiny_serde::{Deserialize, Serialize};
+use tiny_serde::{prelude::*, Deserialize, Serialize};
 
 const ADV_DATA: &[u8] = generate_adv_data! {
     flags: (LE_Only, GeneralDiscovery),
@@ -47,7 +47,7 @@ pub struct HeadlightService {
     pub monitor: [u8; 3],
 
     #[characteristic(uuid = "73e4b52c-4ae2-4901-b78b-8f95f3a60cdb", write, notify)]
-    pub pid: [u8; 5],
+    pub pid: [u8; <PIDCommand as _TinyDeSized>::SIZE],
 
     // diagnostic
     #[characteristic(uuid = "a16bc310-eb50-414e-87b3-2199e79523c2", notify)]

@@ -1,7 +1,7 @@
 use crate::{
     fmt::{error, info},
     utils::adc::get_current,
-    HBEnablePin, MeasureResources, PWMTimer, StatusPin, ABS_MAX_MA, EPSILON, PWM_FREQ, TARGET_MA,
+    HBEnablePin, MeasureResources, PWMTimer, StatusPin, ABS_MAX_MA, EPSILON, TARGET_MA,
 };
 use core::cmp::min;
 use embassy_stm32::{
@@ -12,6 +12,18 @@ use embassy_stm32::{
 };
 use embassy_time::{Duration, Ticker};
 use pid::PIDController;
+
+fn startup<'a>(
+    pwm: &mut ComplementaryPwm<'a, PWMTimer>,
+    enable: &mut Output<'static, HBEnablePin>,
+    status: &mut Output<'static, StatusPin>,
+) {
+    enable.set_high();
+    pwm.enable(Channel::Ch1);
+    status.set_low();
+
+    info!("Starting up regulated output...");
+}
 
 fn shutdown<'a>(
     mut pwm: ComplementaryPwm<'a, PWMTimer>,
@@ -37,20 +49,15 @@ pub async fn regulation_worker(
     mut enable: Output<'static, HBEnablePin>,
     status: &'static mut Output<'static, StatusPin>,
     mut m: MeasureResources,
+    mut pid: PIDController<i32>,
 ) {
     let max_duty = pwm.get_max_duty() - 1;
     let min_duty = 1;
     info!("min/max duty: {}/{}", min_duty, max_duty);
 
-    enable.set_high();
-    pwm.enable(Channel::Ch1);
+    startup(&mut pwm, &mut enable, status);
 
     let mut duty = 1;
-
-    const K_I: u16 = 4;
-
-    let mut pid =
-        PIDController::<i32>::new(0, K_I.into(), 0, (PWM_FREQ / K_I).into(), PWM_FREQ.into());
 
     let mut ticker = Ticker::every(Duration::from_ticks(4));
 

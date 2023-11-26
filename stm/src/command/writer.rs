@@ -4,6 +4,8 @@ use common::{
 use embassy_stm32::{peripherals::USART1, usart::BufferedUartTx};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::Channel};
 
+use crate::fmt::error;
+
 pub type WriterQueue = Channel<ThreadModeRawMutex, FromHeadlightBundle, 8>;
 
 #[embassy_executor::task]
@@ -15,7 +17,9 @@ pub async fn send_command_worker(
         let bundle = queue.recv().await;
 
         use_from_headlight_bundle!(bundle, |cmd| {
-            writer.send(cmd).await;
+            if let Err(e) = writer.send(cmd).await {
+                error!("Command failed to send with error: {}", e);
+            }
         });
     }
 }

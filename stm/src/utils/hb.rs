@@ -8,10 +8,11 @@ use embassy_stm32::{
     },
 };
 
-use crate::{HBEnablePin, HalfBridgeResources, PWMTimer, PWM_FREQ};
+use crate::{HBEnablePin, HalfBridgeResources, PWMTimer};
 
 pub fn setup_hb<'a>(
     hb: HalfBridgeResources,
+    freq: u16,
 ) -> (ComplementaryPwm<'a, PWMTimer>, Output<'a, HBEnablePin>) {
     let control = PwmPin::new_ch1(hb.control, OutputType::PushPull);
     let sync = ComplementaryPwmPin::new_ch1(hb.sync, OutputType::PushPull);
@@ -26,7 +27,7 @@ pub fn setup_hb<'a>(
         None,
         None,
         None,
-        khz(PWM_FREQ.into()),
+        khz(freq.into()),
         CountingMode::EdgeAlignedUp,
     );
 

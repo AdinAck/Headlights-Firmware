@@ -18,6 +18,9 @@ pub enum StateData {
 #[repr(u8)]
 pub enum ErrorData {
     None = 0x00,
+    Flash = 0x10,
+    PIDTerms = 0x20,
+    PWMFreq = 0x21,
 }
 
 // diagnostic -- should not occur in prod

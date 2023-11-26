@@ -1,4 +1,6 @@
 use crate::types::{CRCRepr, CommandID, ErrorData, StateData};
+#[cfg(feature = "defmt")]
+use defmt::Format;
 use tiny_serde::{prelude::*, Deserialize, Serialize};
 use tiny_serde_macros::{Deserialize, Serialize};
 
@@ -28,17 +30,18 @@ impl HeadlightCommand for RequestCommand {
 
 #[derive(Serialize, Deserialize)]
 pub struct StatusCommand {
-    state: StateData,
-    error: ErrorData,
+    pub state: StateData,
+    pub error: ErrorData,
 }
 
 impl HeadlightCommand for StatusCommand {
     const ID: CommandID = 0x1f;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct BrightnessCommand {
-    brightness: u8,
+    pub brightness: u8,
 }
 
 impl HeadlightCommand for BrightnessCommand {
@@ -57,13 +60,23 @@ impl HeadlightCommand for MonitorCommand {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
 pub struct PIDCommand {
-    k_p: u8,
-    k_i: u8,
-    k_d: u8,
-    div: u16,
+    pub k_p: u8,
+    pub k_i: u8,
+    pub k_d: u8,
 }
 
 impl HeadlightCommand for PIDCommand {
     const ID: CommandID = 0xac;
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
+pub struct PWMCommand {
+    pub freq: u16,
+}
+
+impl HeadlightCommand for PWMCommand {
+    const ID: CommandID = 0xad;
 }

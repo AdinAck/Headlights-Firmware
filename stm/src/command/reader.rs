@@ -1,4 +1,4 @@
-use crate::utils::uart::BUF_SIZE;
+use crate::{fmt::error, utils::uart::BUF_SIZE};
 use common::{
     bundles::ToHeadlightBundle, command_reader::HeadlightCommandReader, use_to_headlight_bundle,
 };
@@ -10,7 +10,10 @@ pub async fn receive_command_worker(
     // headlight model?
 ) {
     loop {
-        reader.poll().await;
+        if let Err(e) = reader.poll().await {
+            error!("Command reader failed to poll with error: {}", e);
+            panic!(); // for now, just panic
+        }
 
         if let Some(bundle) = reader.recognizes() {
             use_to_headlight_bundle!(bundle, |cmd| {});

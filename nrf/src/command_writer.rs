@@ -7,6 +7,8 @@ use embassy_nrf::{
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 
+use crate::fmt::error;
+
 pub type WriterQueue = Channel<ThreadModeRawMutex, ToHeadlightBundle, 8>;
 
 #[embassy_executor::task]
@@ -18,7 +20,9 @@ pub async fn send_command_worker(
         let bundle = queue.recv().await;
 
         use_to_headlight_bundle!(bundle, |cmd| {
-            writer.send(cmd).await;
+            if let Err(e) = writer.send(cmd).await {
+                error!("Command failed to send with error: {}", e);
+            }
         })
     }
 }

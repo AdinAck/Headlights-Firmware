@@ -182,19 +182,19 @@ macro_rules! unwrap {
     ($arg:expr) => {
         match $crate::fmt::Try::into_result($arg) {
             ::core::result::Result::Ok(t) => t,
-            ::core::result::Result::Err(e) => {
-                ::core::panic!("unwrap of `{}` failed: {:?}", ::core::stringify!($arg), e);
+            ::core::result::Result::Err(_) => {
+                ::core::panic!();
             }
         }
     };
     ($arg:expr, $($msg:expr),+ $(,)? ) => {
         match $crate::fmt::Try::into_result($arg) {
             ::core::result::Result::Ok(t) => t,
-            ::core::result::Result::Err(e) => {
-                ::core::panic!("unwrap of `{}` failed: {}: {:?}", ::core::stringify!($arg), ::core::format_args!($($msg,)*), e);
+            ::core::result::Result::Err(_) => {
+                ::core::panic!();
             }
         }
-    }
+    };
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -240,4 +240,5 @@ pub(crate) use _warn as warn;
 pub(crate) use assert_eq;
 pub(crate) use error;
 pub(crate) use info;
+pub(crate) use trace;
 pub(crate) use unwrap;

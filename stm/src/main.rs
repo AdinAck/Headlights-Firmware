@@ -76,13 +76,15 @@ use command::reader::receive_command_worker;
 use command::writer::{send_command_worker, WriterQueue};
 use cortex_m::peripheral::SCB;
 use cortex_m_rt::{entry, exception};
-use embassy_stm32::gpio::Output;
+use embassy_stm32::{flash::Flash, gpio::Output};
+use fmt::info;
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
+use pid::PIDController;
 use static_cell::StaticCell;
 use utils::{
-    adc::setup_adc, hb::setup_hb, regulation::regulation_worker, status::setup_status,
-    uart::setup_uart,
+    adc::setup_adc, config::load_config, hb::setup_hb, regulation::regulation_worker,
+    status::setup_status, uart::setup_uart,
 };
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
@@ -144,11 +146,11 @@ static NORMAL_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 static SEND_QUEUE: WriterQueue = WriterQueue::new();
 static STATUS: StaticCell<Output<'static, StatusPin>> = StaticCell::new();
 
+const MIN_PWM_FREQ: u16 = 50;
+const MAX_PWM_FREQ: u16 = 500;
 const TARGET_MA: u16 = 50;
 const ABS_MAX_MA: u16 = 100;
 const EPSILON: u16 = 50;
-
-const PWM_FREQ: u16 = 300;
 
 #[interrupt]
 unsafe fn I2C1() {
@@ -173,19 +175,43 @@ fn main() -> ! {
     let p = embassy_stm32::init(peripheral_config);
     let r = split_resources!(p);
 
-    // setup peripherals
-    let (adc, vref) = setup_adc(p.ADC);
-    let (pwm, enable) = setup_hb(r.hb);
-    let (tx, rx) = setup_uart(r.serial, 9600);
+    // setup minimal peripherals
+    let mut flash = Flash::new_blocking(p.FLASH);
     let status = STATUS.init(setup_status(r.status));
+
+    // TODO: this needs to update the STATE and ERROR flags depending on what happens
+    let headlight_config = load_config(&mut flash, status);
+
+    info!("Loaded headlight configuration: {}.", headlight_config);
+
+    // setup comms peripherals
+    let (tx, rx) = setup_uart(r.serial, 9600);
 
     // setup command reader/writer
     let reader = HeadlightCommandReader::new(rx);
     let writer = HeadlightCommandWriter::new(tx);
 
-    // start high priority executor for regulation
-    let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
-    spawner.must_spawn(regulation_worker(adc, vref, pwm, enable, status, r.measure));
+    if headlight_config.enabled {
+        let pids = headlight_config.pid;
+
+        let pid = PIDController::new(
+            pids.k_p.into(),
+            pids.k_i.into(),
+            pids.k_d.into(),
+            pids.windup_limit.into(),
+            pids.div.into(),
+        );
+
+        // setup regulation peripherals
+        let (adc, vref) = setup_adc(p.ADC);
+        let (pwm, enable) = setup_hb(r.hb, headlight_config.pwm.freq);
+
+        // start high priority executor for regulation
+        let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
+        spawner.must_spawn(regulation_worker(
+            adc, vref, pwm, enable, status, r.measure, pid,
+        ));
+    }
 
     // start low priority executor for comms
     let executor = NORMAL_EXECUTOR.init(Executor::new());
