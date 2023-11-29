@@ -1,25 +1,21 @@
-use crate::{
-    command_reader::ParseCommandBundle,
-    commands::*,
-    types::{CRCRepr, CommandID},
-};
+use crate::{command::HeadlightCommand, command_reader::ParseCommandBundle, types::*};
 use bundle::bundle;
 use crc::Digest;
 use pattern::{Pattern, PatternError};
 
 #[bundle(export)]
 pub enum FromHeadlightBundle {
-    StatusCommand,
-    BrightnessCommand,
-    MonitorCommand,
-    PIDCommand,
+    Status(Status),
+    Control(Control),
+    Monitor(Monitor),
+    Config(Config),
 }
 
 #[bundle(export)]
 pub enum ToHeadlightBundle {
-    RequestCommand,
-    BrightnessCommand,
-    PIDCommand,
+    Request(Request),
+    Control(Control),
+    Config(Config),
 }
 
 macro_rules! impl_parse {

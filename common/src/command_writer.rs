@@ -1,7 +1,4 @@
-use crate::{
-    commands::{CommandHeader, HeadlightCommand},
-    CRC,
-};
+use crate::{command::HeadlightCommand, types::CommandHeader, CRC};
 use embedded_io_async::{ErrorType, Write};
 use tiny_serde::Serialize;
 

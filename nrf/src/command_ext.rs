@@ -1,5 +1,5 @@
 use crate::ble::Server;
-use common::commands::*;
+use common::types::*;
 #[cfg(feature = "defmt")]
 use defmt::Format;
 use nrf_softdevice::ble::{gatt_server::NotifyValueError, Connection};
@@ -20,41 +20,33 @@ pub trait Execute {
     fn run(self, server: &Server, conn: &Connection) -> Result<(), CommandExecutionError>;
 }
 
-impl Execute for StatusCommand {
+impl Execute for Status {
     fn run(self, server: &Server, conn: &Connection) -> Result<(), CommandExecutionError> {
-        server
-            .headlight
-            .status_notify(&conn, &self.serialize())?;
+        server.headlight.status_notify(&conn, &self.serialize())?;
 
         Ok(())
     }
 }
 
-impl Execute for BrightnessCommand {
+impl Execute for Control {
     fn run(self, server: &Server, conn: &Connection) -> Result<(), CommandExecutionError> {
-        server
-            .headlight
-            .brightness_notify(&conn, &self.serialize())?;
+        server.headlight.control_notify(&conn, &self.serialize())?;
 
         Ok(())
     }
 }
 
-impl Execute for MonitorCommand {
+impl Execute for Monitor {
     fn run(self, server: &Server, conn: &Connection) -> Result<(), CommandExecutionError> {
-        server
-            .headlight
-            .monitor_notify(&conn, &self.serialize())?;
+        server.headlight.monitor_notify(&conn, &self.serialize())?;
 
         Ok(())
     }
 }
 
-impl Execute for PIDCommand {
+impl Execute for Config {
     fn run(self, server: &Server, conn: &Connection) -> Result<(), CommandExecutionError> {
-        server
-            .headlight
-            .pid_notify(&conn, &self.serialize())?;
+        server.headlight.config_notify(&conn, &self.serialize())?;
 
         Ok(())
     }

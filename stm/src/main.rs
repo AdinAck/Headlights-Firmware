@@ -1,97 +1,37 @@
-// #![no_std]
-// #![no_main]
-// #![feature(type_alias_impl_trait)]
-
-// use embassy_executor::Spawner;
-// use embassy_stm32::flash::{Blocking, Flash};
-// #[cfg(feature = "defmt")]
-// use {defmt_rtt as _, panic_probe as _};
-// #[cfg(not(feature = "defmt"))]
-// use panic_halt as _;
-
-// mod fmt;
-
-// use fmt::{info, assert_eq, unwrap};
-
-// #[embassy_executor::main]
-// async fn main(_spawner: Spawner) {
-//     let p = embassy_stm32::init(Default::default());
-
-//     info!("Hello Flash!");
-
-//     // Once can also call `into_regions()` to get access to NorFlash implementations
-//     // for each of the unique characteristics.
-//     let mut f = Flash::new_blocking(p.FLASH);
-
-//     // Sector 5
-//     test_flash(&mut f, 15 * 1024, 1024);
-// }
-
-// fn test_flash(f: &mut Flash<'_, Blocking>, offset: u32, size: u32) {
-//     info!("Testing offset: {=u32:#X}, size: {=u32:#X}", offset, size);
-
-//     info!("Reading...");
-//     let mut buf = [0u8; 32];
-//     unwrap!(f.read(offset, &mut buf));
-
-//     info!("Read: {=[u8]:x}", buf);
-
-//     info!("Erasing...");
-//     unwrap!(f.blocking_erase(offset, offset + size));
-
-//     info!("Reading...");
-//     let mut buf = [0u8; 32];
-//     unwrap!(f.read(offset, &mut buf));
-
-//     info!("Read after erase: {=[u8]:x}", buf);
-
-//     info!("Writing...");
-//     unwrap!(f.blocking_write(
-//         offset,
-//         &[
-//             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-//             30, 31, 32
-//         ]
-//     ));
-
-//     info!("Reading...");
-//     let mut buf = [0u8; 32];
-//     unwrap!(f.read(offset, &mut buf));
-
-//     info!("Read: {=[u8]:x}", buf);
-//     assert_eq!(
-//         &buf[..],
-//         &[
-//             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-//             30, 31, 32
-//         ]
-//     );
-// }
-
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(async_fn_in_trait)]
 
 use command::reader::receive_command_worker;
-use command::writer::{send_command_worker, WriterQueue};
+use command::writer::send_command_worker;
+#[cfg(not(feature = "defmt"))]
 use cortex_m::peripheral::SCB;
-use cortex_m_rt::{entry, exception};
-use embassy_stm32::{flash::Flash, gpio::Output};
+use cortex_m_rt::entry;
+#[cfg(not(feature = "defmt"))]
+use cortex_m_rt::exception;
+use embassy_stm32::flash::Flash;
 use fmt::info;
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
-use pid::PIDController;
 use static_cell::StaticCell;
 use utils::{
-    adc::setup_adc, config::load_config, hb::setup_hb, regulation::regulation_worker,
-    status::setup_status, uart::setup_uart,
+    adc::setup_adc,
+    config::Configurator,
+    hb::setup_hb,
+    model::Model,
+    regulation::{regulation_worker, Regulator, RegulatorHardware, RegulatorProxy},
+    status::setup_status,
+    uart::setup_uart,
 };
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
 use common::{
-    assign_resources, command_reader::HeadlightCommandReader,
+    assign_resources,
+    command_reader::HeadlightCommandReader,
     command_writer::HeadlightCommandWriter,
+    types::{Mode, Status},
 };
 use embassy_executor::{Executor, InterruptExecutor};
 use embassy_stm32::{
@@ -120,8 +60,8 @@ bind_interrupts!(struct Irqs {
 });
 
 assign_resources! {
-    pub status: StatusResources {
-        led: PA6 = StatusPin
+    pub status: FaultResources {
+        led: PA6 = FaultLEDPin
     }
     pub measure: MeasureResources {
         cur_sense: PA2,
@@ -143,13 +83,12 @@ assign_resources! {
 static PRIORITY_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 static NORMAL_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
-static SEND_QUEUE: WriterQueue = WriterQueue::new();
-static STATUS: StaticCell<Output<'static, StatusPin>> = StaticCell::new();
+static REG_PROXY: RegulatorProxy = RegulatorProxy::new();
+static MODEL: StaticCell<Model> = StaticCell::new();
 
 const MIN_PWM_FREQ: u16 = 50;
 const MAX_PWM_FREQ: u16 = 500;
-const TARGET_MA: u16 = 50;
-const ABS_MAX_MA: u16 = 100;
+const ABS_MAX_MA: u16 = 1_000;
 const EPSILON: u16 = 50;
 
 #[interrupt]
@@ -163,11 +102,11 @@ fn main() -> ! {
     interrupt::I2C1.set_priority(Priority::P1);
     interrupt::USART1.set_priority(Priority::P2);
 
-    // config rcc
+    // configure rcc
     let mut rcc_config = rcc::Config::default();
     rcc_config.sys_ck = mhz(48).into();
 
-    // config peripherals
+    // configure peripherals
     let mut peripheral_config = PeripheralConfig::default();
     peripheral_config.rcc = rcc_config;
 
@@ -176,13 +115,25 @@ fn main() -> ! {
     let r = split_resources!(p);
 
     // setup minimal peripherals
-    let mut flash = Flash::new_blocking(p.FLASH);
-    let status = STATUS.init(setup_status(r.status));
+    let flash = Flash::new_blocking(p.FLASH);
+    let mut fault = setup_status(r.status);
 
-    // TODO: this needs to update the STATE and ERROR flags depending on what happens
-    let headlight_config = load_config(&mut flash, status);
+    // read config from flash and any error that occured while doing so
+    let mut configurator = Configurator::new(flash);
+    let (headlight_config, maybe_error) = configurator.load_config(&mut fault);
 
-    info!("Loaded headlight configuration: {}.", headlight_config);
+    // initialize device model
+    let model = MODEL.init(Model::new(
+        headlight_config,
+        configurator,
+        maybe_error.map_or(Status::default(), |error| Status {
+            mode: Mode::default(),
+            error,
+        }),
+        &REG_PROXY,
+    ));
+
+    info!("Loaded headlight configuration: {}.", model.config);
 
     // setup comms peripherals
     let (tx, rx) = setup_uart(r.serial, 9600);
@@ -191,32 +142,32 @@ fn main() -> ! {
     let reader = HeadlightCommandReader::new(rx);
     let writer = HeadlightCommandWriter::new(tx);
 
-    if headlight_config.enabled {
-        let pids = headlight_config.pid;
-
-        let pid = PIDController::new(
-            pids.k_p.into(),
-            pids.k_i.into(),
-            pids.k_d.into(),
-            pids.windup_limit.into(),
-            pids.div.into(),
-        );
-
+    if model.config.enabled {
         // setup regulation peripherals
         let (adc, vref) = setup_adc(p.ADC);
-        let (pwm, enable) = setup_hb(r.hb, headlight_config.pwm.freq);
+        let (pwm, enable) = setup_hb(r.hb, model.config.pwm_freq);
+
+        let regulator = Regulator::new(
+            RegulatorHardware {
+                adc,
+                vref,
+                measure: r.measure,
+                pwm,
+                enable,
+                fault,
+            },
+            &model.config,
+        );
 
         // start high priority executor for regulation
         let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
-        spawner.must_spawn(regulation_worker(
-            adc, vref, pwm, enable, status, r.measure, pid,
-        ));
+        spawner.must_spawn(regulation_worker(regulator, &REG_PROXY, model));
     }
 
     // start low priority executor for comms
     let executor = NORMAL_EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        spawner.must_spawn(receive_command_worker(reader));
-        spawner.must_spawn(send_command_worker(writer, &SEND_QUEUE));
+        spawner.must_spawn(receive_command_worker(reader, model));
+        spawner.must_spawn(send_command_worker(writer, &model.send_queue));
     });
 }

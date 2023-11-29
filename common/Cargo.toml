@@ -12,7 +12,7 @@ defmt = [
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
 tiny-serde-macros = { git = "https://github.com/AdinAck/tiny-serde-macros", branch = "main" }
 pattern = { git = "https://github.com/AdinAck/pattern", branch = "main" }
-bundle = { git = "https://github.com/AdinAck/bundle", branch = "development" }
+bundle = { git = "https://github.com/AdinAck/bundle", branch = "main" }
 embedded-io-async = "0.6.0"
 crc = "3.0.1"
 heapless = "0.8.0"

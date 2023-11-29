@@ -31,7 +31,9 @@ use common::{
     assign_resources, command_reader::HeadlightCommandReader,
     command_writer::HeadlightCommandWriter,
 };
+#[cfg(not(feature = "defmt"))]
 use cortex_m::peripheral::SCB;
+#[cfg(not(feature = "defmt"))]
 use cortex_m_rt::exception;
 use embassy_nrf::peripherals;
 use uart::setup_uart;

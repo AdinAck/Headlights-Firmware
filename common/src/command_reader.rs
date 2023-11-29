@@ -1,8 +1,7 @@
 use crate::{
-    commands::CommandHeader,
     fmt::{error, warn},
     scan_buf::ScanBuf,
-    types::{CRCRepr, CommandID},
+    types::{CRCRepr, CommandHeader, CommandID},
     CRC,
 };
 use crc::Digest;

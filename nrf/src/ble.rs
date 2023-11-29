@@ -2,7 +2,7 @@ use crate::{
     command_writer::WriterQueue,
     fmt::{error, info, unwrap},
 };
-use common::{bundles::ToHeadlightBundle, commands::*, types::AppErrorData};
+use common::{bundles::ToHeadlightBundle, types::*};
 use core::mem;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
@@ -34,24 +34,24 @@ static MODEL: StaticCell<BLE> = StaticCell::new();
 #[nrf_softdevice::gatt_service(uuid = "0b2adcf1-38a7-48f9-a61d-8311fe471b70")]
 pub struct HeadlightService {
     #[characteristic(uuid = "9a00bcc5-89f1-4b9d-88bd-f2033440a5b4", write)]
-    pub request: [u8; 1],
+    pub request: [u8; <Request as _TinyDeSized>::SIZE],
 
     // responses
     #[characteristic(uuid = "ccf82e46-5f1c-4671-b481-7ffd2854fed4", notify)]
-    pub status: [u8; 2],
+    pub status: [u8; <Status as _TinyDeSized>::SIZE],
 
     #[characteristic(uuid = "eb483eeb-7b8e-45e0-910b-6c88fb3d75f3", write, notify)]
-    pub brightness: [u8; 1],
+    pub control: [u8; <Control as _TinyDeSized>::SIZE],
 
     #[characteristic(uuid = "30f62c01-d9d8-4c14-9a66-36ad0d92edbf", notify)]
-    pub monitor: [u8; 3],
+    pub monitor: [u8; <Monitor as _TinyDeSized>::SIZE],
 
     #[characteristic(uuid = "73e4b52c-4ae2-4901-b78b-8f95f3a60cdb", write, notify)]
-    pub pid: [u8; <PIDCommand as _TinyDeSized>::SIZE],
+    pub config: [u8; <Config as _TinyDeSized>::SIZE],
 
     // diagnostic
     #[characteristic(uuid = "a16bc310-eb50-414e-87b3-2199e79523c2", notify)]
-    pub app_error: [u8; 1],
+    pub app_error: [u8; <AppErrorData as _TinyDeSized>::SIZE],
 }
 
 #[nrf_softdevice::gatt_server]
@@ -140,13 +140,13 @@ impl BLE {
                 ServerEvent::Headlight(e) => {
                     let bundle: Option<ToHeadlightBundle> = match e {
                         HeadlightServiceEvent::RequestWrite(data) => {
-                            RequestCommand::deserialize(data).map(ToHeadlightBundle::RequestCommand)
+                            Request::deserialize(data).map(Request::into)
                         }
-                        HeadlightServiceEvent::BrightnessWrite(data) => {
-                            BrightnessCommand::deserialize(data).map(ToHeadlightBundle::BrightnessCommand)
+                        HeadlightServiceEvent::ControlWrite(data) => {
+                            Control::deserialize(data).map(Control::into)
                         }
-                        HeadlightServiceEvent::PidWrite(data) => {
-                            PIDCommand::deserialize(data).map(ToHeadlightBundle::PIDCommand)
+                        HeadlightServiceEvent::ConfigWrite(data) => {
+                            Config::deserialize(data).map(Config::into)
                         }
                         _ => return
                     };

@@ -2,9 +2,9 @@
 
 pub mod assign_resources;
 pub mod bundles;
+pub mod command;
 pub mod command_reader;
 pub mod command_writer;
-pub mod commands;
 mod fmt;
 mod scan_buf;
 pub mod types;
