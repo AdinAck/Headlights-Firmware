@@ -16,6 +16,7 @@ pub enum ToHeadlightBundle {
     Request(Request),
     Control(Control),
     Config(Config),
+    Reset(Reset),
 }
 
 macro_rules! impl_parse {

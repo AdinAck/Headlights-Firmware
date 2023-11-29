@@ -86,10 +86,14 @@ static NORMAL_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 static REG_PROXY: RegulatorProxy = RegulatorProxy::new();
 static MODEL: StaticCell<Model> = StaticCell::new();
 
+/// min configurable PWM frequency
 const MIN_PWM_FREQ: u16 = 50;
+/// max configurable PWM frequency
 const MAX_PWM_FREQ: u16 = 500;
+/// absolute maximum current
 const ABS_MAX_MA: u16 = 1_000;
-const EPSILON: u16 = 50;
+/// max mA measurement (adc) error
+const EPSILON: u16 = 10;
 
 #[interrupt]
 unsafe fn I2C1() {
@@ -162,6 +166,8 @@ fn main() -> ! {
         // start high priority executor for regulation
         let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
         spawner.must_spawn(regulation_worker(regulator, &REG_PROXY, model));
+    } else {
+        info!("Regulation is disabled.");
     }
 
     // start low priority executor for comms

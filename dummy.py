@@ -17,7 +17,7 @@ def crcify(b: bytes, i: int) -> bytes:
     return b[:i] + bytes([CALCULATOR.checksum(b)]) + b[i:]
 
 def bulk_write(ser: Serial):
-    
+
     while ...:
         # ser.write(crcify(bytes([0x1f, 0xf0, 0x00]), 1)) # status
         # sleep(0.01)
@@ -27,22 +27,22 @@ def bulk_write(ser: Serial):
         # sleep(0.01)
         # ser.write(crcify(bytes([0xac]) + randbytes(2) + bytes([0xde]) + randbytes(2), 1)) # pid
         # sleep(0.01)
-        
+
         send = (
             crcify(bytes([0x1f, 0xf0, 0x00]), 1) + # status
             crcify(bytes([0xaa]) + randbytes(1), 1) + # brightness
             crcify(bytes([0xab]) + randbytes(3), 1) + # monitor
             crcify(bytes([0xac]) + randbytes(2) + bytes([0xde]) + randbytes(2), 1)
         )
-        
+
         ser.write(send)
         sleep(0.05)
-        
+
 
 if __name__ == '__main__':
     with Serial(PORT, 9600) as ser:
         # ser.write(bytes([0] * 10)) # pad buffer with noop
-        
+
         # ser.write(crcify(bytes([0x1f, 0xf0, 0x00]), 1)) # status
         # sleep(2)
         # ser.write(crcify(bytes([0xaa, 0x0f]), 1)) # brightness
@@ -51,16 +51,28 @@ if __name__ == '__main__':
         # sleep(2)
         # ser.write(crcify(bytes([0xac, 0x00, 0x00, 0x00, 0x00, 0x00]), 1))
         # sleep(2)
-        
-        send = (
-            bytes([0xee, 0x00]) + # nonsense
-            crcify(bytes([0x1f, 0xf0, 0x00]), 1) + # status
-            crcify(bytes([0xaa, 0x0f]), 1) + # brightness
-            crcify(bytes([0xab, 0x00, 0x00, 0x00]), 1) + # monitor
-            crcify(bytes([0xac, 0x00, 0x00, 0x00, 0x00, 0x00]), 1)
-        )
 
-        print([i for i in send])
-        ser.write(send)
-        
-        bulk_write(ser)
+        # send = (
+        #     bytes([0xee, 0x00]) + # nonsense
+        #     crcify(bytes([0x1f, 0xf0, 0x00]), 1) + # status
+        #     crcify(bytes([0xaa, 0x0f]), 1) + # brightness
+        #     crcify(bytes([0xab, 0x00, 0x00, 0x00]), 1) + # monitor
+        #     crcify(bytes([0xac, 0x00, 0x00, 0x00, 0x00, 0x00]), 1)
+        # )
+
+        # print([i for i in send])
+        # ser.write(send)
+
+        # bulk_write(ser)
+
+        # write config
+        # ser.write(crcify(bytes([0xac, 0x1, 0, 50, 0, 4, 1, 44, 0, 120]), 1))
+
+        # write control
+        while ...:
+            for i in range(101):
+                ser.write(crcify(bytes([0xaa, 0, i]), 1))
+                sleep(0.01)
+            for i in range(100, -1, -1):
+                ser.write(crcify(bytes([0xaa, 0, i]), 1))
+                sleep(0.01)

@@ -1,6 +1,10 @@
-use common::types::{Config, Control, Request, RuntimeError, Status};
+use common::types::{Config, Control, Request, Reset, RuntimeError, Status};
+use cortex_m::peripheral::SCB;
 
-use crate::{fmt::error, utils::model::Model};
+use crate::{
+    fmt::{error, info, warn},
+    utils::model::Model,
+};
 #[cfg(feature = "defmt")]
 use defmt::Format;
 
@@ -47,16 +51,35 @@ impl Execute for Config {
     async fn run(self, model: &Model) -> Result<(), Error> {
         match self.try_into() {
             Ok(valid_config) => {
-                model.shutdown_regulation().await;
+                if model.config.enabled {
+                    model.shutdown_regulation().await;
+                }
                 let mut lock = model.configurator.lock().await;
-                if let Err(e) = lock.write_config(valid_config) {
-                    model.set_error(RuntimeError::Flash.into()).await;
-                    error!("Failed to write config with error: {}.", e);
+                match lock.write_config(valid_config) {
+                    Ok(_) => {
+                        info!("Config write complete, resetting!");
+                        Reset::Now.run(model).await.ok(); // infallible
+                    }
+                    Err(e) => {
+                        model.set_error(RuntimeError::Flash.into()).await;
+                        error!("Failed to write config with error: {}.", e);
+                    }
                 }
             }
-            Err(e) => model.set_error(e.into()).await,
+            Err(e) => {
+                model.set_error(e.into()).await;
+                warn!("Received config was invalid for reason: {}.", e);
+            }
         }
 
         Ok(())
+    }
+}
+
+impl Execute for Reset {
+    async fn run(self, _model: &Model) -> Result<(), Error> {
+        match self {
+            Self::Now => SCB::sys_reset(),
+        }
     }
 }

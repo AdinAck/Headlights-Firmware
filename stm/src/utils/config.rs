@@ -52,6 +52,10 @@ impl TryFrom<Config> for ValidatedConfig {
             .then_some(())
             .ok_or(ConfigError::MaxTarget)?;
 
+        (value.startup_control.target <= value.max_target)
+            .then_some(())
+            .ok_or(ConfigError::StartupTarget)?;
+
         (value.gain >= 1).then_some(()).ok_or(ConfigError::Gain)?;
 
         Ok(Self { inner: value })
@@ -87,7 +91,7 @@ impl<'a> Configurator<'a> {
         let mut buf = [0u8; CFG_SIZE + (WRITE_SIZE - CFG_SIZE % WRITE_SIZE)];
         buf[..CFG_SIZE].copy_from_slice(&config.inner().serialize());
         self.flash
-            .blocking_erase(CONFIG_SECTOR * KIBBI, CONFIG_SECTOR * KIBBI + KIBBI - 1)?;
+            .blocking_erase(CONFIG_SECTOR * KIBBI, CONFIG_SECTOR * KIBBI + KIBBI)?;
         self.flash.blocking_write(CONFIG_SECTOR * KIBBI, &buf)?;
 
         Ok(())

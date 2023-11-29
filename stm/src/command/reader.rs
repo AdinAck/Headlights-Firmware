@@ -16,7 +16,7 @@ pub async fn receive_command_worker(
     loop {
         if let Err(e) = reader.poll().await {
             error!("Command reader failed to poll with error: {}", e);
-            panic!(); // for now, just panic
+            return;
         }
 
         if let Some(bundle) = reader.recognizes() {

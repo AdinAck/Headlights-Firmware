@@ -22,6 +22,7 @@ pub enum ConfigError {
     Gain,
     PWMFreq,
     MaxTarget,
+    StartupTarget,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -65,20 +66,17 @@ pub enum Mode {
     Fault = 0xf3,
 }
 
-#[derive(Clone, Copy, Default, Serialize, Deserialize)]
-pub struct Status {
-    pub mode: Mode,
-    pub error: Error,
-}
-
 // diagnostic -- should not occur in prod
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum AppErrorData {
     None = 0x00,
-    InvalidPacket = 0x10, // app sent a packet that could not be serialized
-    SendFault = 0x11,     // command built from app data could not be sent
-    TooFast = 0x12,       // app sent a command before the previous finished dispatching
+    /// app sent a packet that could not be serialized
+    InvalidPacket = 0x10,
+    /// command built from app data could not be sent
+    SendFault = 0x11,
+    /// app sent a command before the previous finished dispatching
+    TooFast = 0x12,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -88,6 +86,30 @@ pub enum Request {
     Control = Control::ID,
     Monitor = Monitor::ID,
     Config = Config::ID,
+}
+
+impl HeadlightCommand for Request {
+    const ID: CommandID = 0x10;
+}
+
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+pub struct Status {
+    pub mode: Mode,
+    pub error: Error,
+}
+
+impl HeadlightCommand for Status {
+    const ID: CommandID = 0x1f;
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "defmt", derive(Format))]
+pub struct Control {
+    pub target: u16,
+}
+
+impl HeadlightCommand for Control {
+    const ID: CommandID = 0xaa;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -100,10 +122,8 @@ pub struct Monitor {
     pub temperature: u8,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "defmt", derive(Format))]
-pub struct Control {
-    pub target: u16,
+impl HeadlightCommand for Monitor {
+    const ID: CommandID = 0xab;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -133,22 +153,16 @@ impl Default for Config {
     }
 }
 
-impl HeadlightCommand for Request {
-    const ID: CommandID = 0x10;
-}
-
-impl HeadlightCommand for Status {
-    const ID: CommandID = 0x1f;
-}
-
-impl HeadlightCommand for Control {
-    const ID: CommandID = 0xaa;
-}
-
-impl HeadlightCommand for Monitor {
-    const ID: CommandID = 0xab;
-}
-
 impl HeadlightCommand for Config {
     const ID: CommandID = 0xac;
+}
+
+#[derive(Serialize, Deserialize)]
+#[repr(u8)]
+pub enum Reset {
+    Now,
+}
+
+impl HeadlightCommand for Reset {
+    const ID: CommandID = 0xff;
 }

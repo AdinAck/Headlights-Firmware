@@ -74,6 +74,7 @@ pub struct Regulator<'a> {
 
     pid: PIDController<i32>,
 
+    max_target: u16,
     max_duty: u16,
 }
 
@@ -92,6 +93,7 @@ impl<'a> Regulator<'a> {
                 (config.pwm_freq / config.gain).into(),
                 config.pwm_freq.into(),
             ),
+            max_target: config.max_target,
             max_duty,
         }
     }
@@ -118,8 +120,8 @@ impl<'a> Regulator<'a> {
     }
 
     fn check_fault(&self, monitor: &Monitor, control: &Control) -> Option<RuntimeError> {
-        if monitor.current > control.target + EPSILON {
-            // current is sufficiently over target to be considered unsafe
+        if monitor.current > self.max_target + EPSILON {
+            // current is sufficiently over max target to be considered unsafe
             Some(RuntimeError::Overcurrent)
         } else if monitor.current < control.target && monitor.duty == self.max_duty {
             // current is low at max duty (load is disconnected or supply voltage is too low)
