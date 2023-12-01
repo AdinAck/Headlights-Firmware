@@ -30,7 +30,7 @@ pub fn mv_to_ma(mv: u16) -> Option<u16> {
 pub fn setup_adc<'a>(hw_adc: ADC) -> (Adc<'a, ADC>, Vref) {
     let mut adc = Adc::new(hw_adc, Irqs, &mut Delay);
     adc.set_resolution(Resolution::TwelveBit);
-    adc.set_sample_time(SampleTime::Cycles239_5);
+    adc.set_sample_time(SampleTime::Cycles13_5);
 
     let vref = adc.enable_vref(&mut Delay);
 

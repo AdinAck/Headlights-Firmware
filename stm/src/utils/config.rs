@@ -9,8 +9,11 @@ use tiny_serde::{prelude::*, Deserialize, Serialize};
 
 use crate::{
     fmt::{error, info, trace, unwrap, warn},
-    FaultLEDPin, ABS_MAX_MA, MAX_PWM_FREQ, MIN_PWM_FREQ,
+    limits::{ABS_MAX_MA, ABS_MAX_TEMP, MAX_PWM_FREQ, MIN_PWM_FREQ},
+    FaultLEDPin,
 };
+
+use super::thermistor::celsius_to_sample;
 
 const CONFIG_SECTOR: u32 = 31;
 const KIBBI: u32 = 1024;
@@ -42,23 +45,28 @@ pub struct ValidatedConfig {
 
 impl TryFrom<Config> for ValidatedConfig {
     type Error = ConfigError;
-    fn try_from(value: Config) -> Result<Self, Self::Error> {
+    fn try_from(config: Config) -> Result<Self, Self::Error> {
         (MIN_PWM_FREQ..=MAX_PWM_FREQ)
-            .contains(&value.pwm_freq)
+            .contains(&config.pwm_freq)
             .then_some(())
             .ok_or(ConfigError::PWMFreq)?;
 
-        (value.max_target < ABS_MAX_MA)
+        (config.abs_max_load_current < ABS_MAX_MA)
             .then_some(())
             .ok_or(ConfigError::MaxTarget)?;
 
-        (value.startup_control.target <= value.max_target)
+        (config.startup_control.target <= config.abs_max_load_current)
             .then_some(())
             .ok_or(ConfigError::StartupTarget)?;
 
-        (value.gain >= 1).then_some(()).ok_or(ConfigError::Gain)?;
+        (config.gain >= 1).then_some(()).ok_or(ConfigError::Gain)?;
 
-        Ok(Self { inner: value })
+        (config.throttle_start < config.throttle_stop
+            && celsius_to_sample(config.throttle_stop) < ABS_MAX_TEMP)
+            .then_some(())
+            .ok_or(ConfigError::ThrottleBounds)?;
+
+        Ok(Self { inner: config })
     }
 }
 

@@ -86,17 +86,6 @@ impl Model {
         self.send_queue.send(lock.clone().into()).await;
     }
 
-    /// Attempts to update the model's control attribute and push the command the send queue
-    /// without waiting. If waiting is required, skip.
-    pub fn set_control_immediately(&self, control: Control) {
-        if let Ok(mut lock) = self.control.try_lock() {
-            *lock = control;
-            self.regulator_proxy.set_control(lock.clone());
-
-            self.send_queue.try_send(lock.clone().into()).ok();
-        }
-    }
-
     pub async fn get_monitor_immediately(&self) -> Option<Monitor> {
         self.regulator_proxy.get_monitor_immediately().await
     }
@@ -104,4 +93,17 @@ impl Model {
     pub async fn shutdown_regulation(&self) {
         self.regulator_proxy.shutdown().await;
     }
+
+    pub async fn observe_regulator(&self) -> ! {
+        loop {
+            let status = self.regulator_proxy.wait_for_new_status().await;
+            self.set_mode(status.mode).await;
+            self.set_error(status.error).await;
+        }
+    }
+}
+
+#[embassy_executor::task]
+pub async fn model_worker(model: &'static Model) -> ! {
+    model.observe_regulator().await
 }

@@ -66,13 +66,23 @@ if __name__ == '__main__':
         # bulk_write(ser)
 
         # write config
-        # ser.write(crcify(bytes([0xac, 0x1, 0, 50, 0, 4, 1, 44, 0, 120]), 1))
+        # ser.write(crcify(bytes([0xac, 0x1, 0, 50, 4, 1, 44, 0, 120, 40, 50]), 1))
 
         # write control
-        while ...:
-            for i in range(101):
-                ser.write(crcify(bytes([0xaa, 0, i]), 1))
-                sleep(0.01)
-            for i in range(100, -1, -1):
-                ser.write(crcify(bytes([0xaa, 0, i]), 1))
-                sleep(0.01)
+        # ser.write(crcify(bytes([0xaa, 0, 100]), 1))
+
+        # brightness sweep
+        # while ...:
+        #     for i in range(101):
+        #         ser.write(crcify(bytes([0xaa, 0, i]), 1))
+        #         sleep(0.01)
+        #     for i in range(100, -1, -1):
+        #         ser.write(crcify(bytes([0xaa, 0, i]), 1))
+        #         sleep(0.01)
+
+        # request monitor
+        ser.write(crcify(bytes([0x10, 0xab]), 1))
+        print([i for i in ser.read(10)])
+
+        # reset
+        # ser.write(crcify(bytes([0xff, 0x0]), 1))

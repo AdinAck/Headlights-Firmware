@@ -19,7 +19,7 @@ use utils::{
     adc::setup_adc,
     config::Configurator,
     hb::setup_hb,
-    model::Model,
+    model::{model_worker, Model},
     regulation::{regulation_worker, Regulator, RegulatorHardware, RegulatorProxy},
     status::setup_status,
     uart::setup_uart,
@@ -46,6 +46,7 @@ use embassy_stm32::{interrupt, usart};
 
 mod command;
 mod fmt;
+mod limits;
 mod utils;
 
 #[cfg(not(feature = "defmt"))]
@@ -85,15 +86,6 @@ static NORMAL_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
 static REG_PROXY: RegulatorProxy = RegulatorProxy::new();
 static MODEL: StaticCell<Model> = StaticCell::new();
-
-/// min configurable PWM frequency
-const MIN_PWM_FREQ: u16 = 50;
-/// max configurable PWM frequency
-const MAX_PWM_FREQ: u16 = 500;
-/// absolute maximum current
-const ABS_MAX_MA: u16 = 1_000;
-/// max mA measurement (adc) error
-const EPSILON: u16 = 10;
 
 #[interrupt]
 unsafe fn I2C1() {
@@ -164,15 +156,16 @@ fn main() -> ! {
         );
 
         // start high priority executor for regulation
-        let spawner = PRIORITY_EXECUTOR.start(interrupt::I2C1);
-        spawner.must_spawn(regulation_worker(regulator, &REG_PROXY, model));
+        let priority_executor = PRIORITY_EXECUTOR.start(interrupt::I2C1);
+        priority_executor.must_spawn(regulation_worker(regulator, &REG_PROXY));
     } else {
         info!("Regulation is disabled.");
     }
 
     // start low priority executor for comms
-    let executor = NORMAL_EXECUTOR.init(Executor::new());
-    executor.run(|spawner| {
+    let normal_executor = NORMAL_EXECUTOR.init(Executor::new());
+    normal_executor.run(|spawner| {
+        spawner.must_spawn(model_worker(model));
         spawner.must_spawn(receive_command_worker(reader, model));
         spawner.must_spawn(send_command_worker(writer, &model.send_queue));
     });

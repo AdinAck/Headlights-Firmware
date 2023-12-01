@@ -23,6 +23,7 @@ pub enum ConfigError {
     PWMFreq,
     MaxTarget,
     StartupTarget,
+    ThrottleBounds,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -31,6 +32,7 @@ pub enum ConfigError {
 pub enum RuntimeError {
     Flash = 0x10,
     Overcurrent = 0x20,
+    Overtemperature,
     InvariantLoad,
     ArithmeticError,
 }
@@ -56,7 +58,7 @@ impl From<RuntimeError> for Error {
     }
 }
 
-#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Mode {
     #[default]
@@ -116,10 +118,12 @@ impl HeadlightCommand for Control {
 pub struct Monitor {
     /// Duty cycle of regulation PWM
     pub duty: u16,
-    /// Load current
-    pub current: u16,
+    /// Upper load current
+    pub upper_current: u16,
+    /// Lower load current
+    pub lower_current: u16,
     /// Temperature of FETs (not load)
-    pub temperature: u8,
+    pub temperature: u16,
 }
 
 impl HeadlightCommand for Monitor {
@@ -134,11 +138,15 @@ pub struct Config {
     /// Default control scheme before any user control
     pub startup_control: Control,
     /// The gain or sensitivity of the regulation feedback loop
-    pub gain: u16,
+    pub gain: u8,
     /// Frequency of PWM control signal for regulation
     pub pwm_freq: u16,
     /// User-defined maximum regulation current for the load
-    pub max_target: u16,
+    pub abs_max_load_current: u16,
+    /// Temperature to start throttling at
+    pub throttle_start: u8,
+    /// Temperature to stop throttling at (overheating)
+    pub throttle_stop: u8,
 }
 
 impl Default for Config {
@@ -148,7 +156,9 @@ impl Default for Config {
             startup_control: Control { target: 50 },
             gain: 1,
             pwm_freq: 300,
-            max_target: 100,
+            abs_max_load_current: 100,
+            throttle_start: 50,
+            throttle_stop: 60,
         }
     }
 }

@@ -1,8 +1,11 @@
 use crate::{
     fmt::{error, info},
-    FaultLEDPin, HBEnablePin, MeasureResources, PWMTimer, EPSILON,
+    limits::EPSILON,
+    FaultLEDPin, HBEnablePin, MeasureResources, PWMTimer,
 };
-use common::types::{Config, Control, Mode, Monitor, RuntimeError};
+use common::types::{
+    Config, Control, Error as HeadlightError, Mode, Monitor, RuntimeError, Status,
+};
 use core::cmp::min;
 use embassy_stm32::{
     adc::{Adc, Vref},
@@ -16,7 +19,7 @@ use pid::PIDController;
 
 use super::{
     adc::{mv_to_ma, sample_to_mv},
-    model::Model,
+    thermistor::celsius_to_sample,
 };
 
 pub struct RegulatorHardware<'a> {
@@ -33,6 +36,7 @@ pub struct RegulatorHardware<'a> {
 pub struct RegulatorProxy {
     control: Signal<CriticalSectionRawMutex, Control>,
     monitor: Signal<CriticalSectionRawMutex, Monitor>,
+    status: Signal<CriticalSectionRawMutex, Status>,
     shutdown_start: Signal<CriticalSectionRawMutex, ()>,
     shutdown_confirm: Signal<CriticalSectionRawMutex, ()>,
 }
@@ -42,6 +46,7 @@ impl RegulatorProxy {
         Self {
             control: Signal::new(),
             monitor: Signal::new(),
+            status: Signal::new(),
             shutdown_start: Signal::new(),
             shutdown_confirm: Signal::new(),
         }
@@ -67,6 +72,10 @@ impl RegulatorProxy {
         self.shutdown_start.signal(());
         self.shutdown_confirm.wait().await;
     }
+
+    pub async fn wait_for_new_status(&self) -> Status {
+        self.status.wait().await
+    }
 }
 
 pub struct Regulator<'a> {
@@ -76,6 +85,8 @@ pub struct Regulator<'a> {
 
     max_target: u16,
     max_duty: u16,
+    throttle_start: u16,
+    throttle_stop: u16,
 }
 
 impl<'a> Regulator<'a> {
@@ -90,11 +101,13 @@ impl<'a> Regulator<'a> {
                 0,
                 config.gain.into(),
                 0,
-                (config.pwm_freq / config.gain).into(),
+                (config.pwm_freq.div_ceil(config.gain.into())).into(),
                 config.pwm_freq.into(),
             ),
-            max_target: config.max_target,
+            max_target: config.abs_max_load_current,
             max_duty,
+            throttle_start: celsius_to_sample(config.throttle_start),
+            throttle_stop: celsius_to_sample(config.throttle_stop),
         }
     }
 
@@ -108,66 +121,129 @@ impl<'a> Regulator<'a> {
         self.hw.enable.set_low();
     }
 
-    pub async fn get_reading(&mut self) -> Option<(u16, u8)> {
+    pub async fn get_reading(&mut self) -> Option<(u16, u16)> {
         let vref_sample = self.hw.adc.read(&mut self.hw.vref).await;
         let raw_temp = self.hw.adc.read(&mut self.hw.measure.temp).await;
         let raw_current = self.hw.adc.read(&mut self.hw.measure.cur_sense).await; // measure current last to be more fresh ;)
 
-        Some((
-            mv_to_ma(sample_to_mv(raw_current, vref_sample)?)?,
-            sample_to_mv(raw_temp, vref_sample)? as u8, /* TODO */
-        ))
+        // raw temp is more accurate than comparing to vref since the measurement is a voltage divider from VDD
+        Some((mv_to_ma(sample_to_mv(raw_current, vref_sample)?)?, raw_temp))
     }
 
-    fn check_fault(&self, monitor: &Monitor, control: &Control) -> Option<RuntimeError> {
-        if monitor.current > self.max_target + EPSILON {
+    fn check_fault(
+        &self,
+        current: u16,
+        target: u16,
+        temperature: u16,
+        duty: u16,
+    ) -> Option<RuntimeError> {
+        if current > self.max_target + EPSILON {
             // current is sufficiently over max target to be considered unsafe
             Some(RuntimeError::Overcurrent)
-        } else if monitor.current < control.target && monitor.duty == self.max_duty {
+        } else if current < target && duty == self.max_duty {
             // current is low at max duty (load is disconnected or supply voltage is too low)
             Some(RuntimeError::InvariantLoad)
+        } else if temperature > self.throttle_stop {
+            Some(RuntimeError::Overtemperature)
         } else {
             None
         }
     }
 
-    fn next_duty(&mut self, monitor: &Monitor, control: &Control) -> Result<u16, RuntimeError> {
-        if let Some(delta) = self.pid.run(control.target.into(), monitor.current.into()) {
-            Ok(min(
-                self.max_duty,
-                monitor.duty.saturating_add_signed(delta),
+    fn thermal_throttle(&self, temperature: u16, target: u16) -> Result<(u16, bool), RuntimeError> {
+        if temperature >= self.throttle_start {
+            Ok((
+                min(
+                    target,
+                    // linear ramp
+                    u32::from(self.throttle_stop - temperature)
+                        .checked_mul(u32::from(self.max_target))
+                        .ok_or(RuntimeError::ArithmeticError)?
+                        .checked_div(u32::from(self.throttle_stop - self.throttle_start))
+                        .ok_or(RuntimeError::ArithmeticError)?
+                        .try_into()
+                        .map_err(|_| RuntimeError::ArithmeticError)?,
+                ),
+                true,
             ))
+        } else {
+            Ok((target, false))
+        }
+    }
+
+    fn next_duty(
+        &mut self,
+        current: u16,
+        upper: &mut u16,
+        lower: &mut u16,
+        target: u16,
+        prev_duty: u16,
+    ) -> Result<u16, RuntimeError> {
+        if let Some(delta) = self.pid.run(target.into(), current.into()) {
+            if delta > 0 {
+                // if pid has decided to go up, we hit the lower current bound
+                *lower = current;
+            } else if delta < 0 {
+                // if pid has decided to go down, we hit the upper current bound
+                *upper = current;
+            }
+
+            Ok(min(self.max_duty, prev_duty.saturating_add_signed(delta)))
         } else {
             Err(RuntimeError::ArithmeticError)
         }
     }
 
-    async fn run(&mut self, proxy: &RegulatorProxy, model: &Model) {
+    async fn run(&mut self, proxy: &RegulatorProxy) {
         let mut control = proxy.control.wait().await;
-        let mut monitor;
         let mut duty = 0;
+        let mut upper_current = 0;
+        let mut lower_current = 0;
+
+        let mut status = Status {
+            mode: Mode::Running,
+            error: HeadlightError::None,
+        };
 
         self.startup();
-        model.set_mode(Mode::Running).await;
+        proxy.status.signal(status);
 
         let mut ticker = Ticker::every(Duration::from_ticks(4));
 
         let error = loop {
             // get a reading (current and temp)
             if let Some((current, temperature)) = self.get_reading().await {
-                monitor = Monitor {
-                    duty,
-                    current,
-                    temperature,
-                };
-
                 // check for any fault from reading
-                if let Some(error) = self.check_fault(&monitor, &control) {
+                if let Some(error) = self.check_fault(current, control.target, temperature, duty) {
                     break Some(error);
                 }
 
+                // get throttled target
+                let target = match self.thermal_throttle(temperature, control.target) {
+                    Ok((throttled_target, throttling)) => {
+                        if throttling && status.mode != Mode::Throttling {
+                            status.mode = Mode::Throttling;
+                            proxy.status.signal(status);
+                        } else if !throttling && status.mode != Mode::Running {
+                            status.mode = Mode::Running;
+                            proxy.status.signal(status);
+                        }
+
+                        throttled_target
+                    }
+                    Err(e) => {
+                        break Some(e);
+                    }
+                };
+
                 // update pid/pwm
-                match self.next_duty(&monitor, &control) {
+                match self.next_duty(
+                    current,
+                    &mut upper_current,
+                    &mut lower_current,
+                    target,
+                    duty,
+                ) {
                     Ok(new_duty) => {
                         self.hw.pwm.set_duty(Self::CHANNEL, new_duty);
                         duty = new_duty;
@@ -177,16 +253,19 @@ impl<'a> Regulator<'a> {
                     }
                 }
 
-                // TODO: model.set_control_immediately(...) for thermal throttling
-
                 // update local control with global immediately or skip
                 if proxy.control.signaled() {
                     // wait will be instantaneous because nothing else can wait for this signal
                     control = proxy.control.wait().await;
                 }
 
-                // push local monitor to global
-                proxy.monitor.signal(monitor);
+                // push local monitor to proxy
+                proxy.monitor.signal(Monitor {
+                    duty,
+                    upper_current,
+                    lower_current,
+                    temperature,
+                });
 
                 // check for shutdown signal
                 if proxy.shutdown_start.signaled() {
@@ -204,24 +283,23 @@ impl<'a> Regulator<'a> {
         proxy.shutdown_confirm.signal(());
 
         if let Some(error) = error {
-            model.set_mode(Mode::Fault).await;
+            status.mode = Mode::Fault;
+            status.error = error.into();
             self.hw.fault.set_high();
             error!(
                 "The current state was determined to be unsafe for reason: {}. Shutting down.",
                 error
             );
         } else {
-            model.set_mode(Mode::Idle).await;
+            status.mode = Mode::Idle;
         }
+
+        proxy.status.signal(status);
     }
 }
 
 #[embassy_executor::task]
-pub async fn regulation_worker(
-    mut regulator: Regulator<'static>,
-    proxy: &'static RegulatorProxy,
-    model: &'static Model,
-) {
-    regulator.run(proxy, model).await;
+pub async fn regulation_worker(mut regulator: Regulator<'static>, proxy: &'static RegulatorProxy) {
+    regulator.run(proxy).await;
     info!("Regulation has ended.");
 }
