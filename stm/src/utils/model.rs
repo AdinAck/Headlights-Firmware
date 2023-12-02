@@ -1,7 +1,7 @@
 use common::types::{Config, Control, Error as HeadlightError, Mode, Monitor, Status};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
-use crate::command::writer::WriterQueue;
+use crate::{command::writer::WriterQueue, fmt::info};
 
 use super::{
     config::{Configurator, ValidatedConfig},

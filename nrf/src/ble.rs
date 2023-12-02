@@ -49,6 +49,9 @@ pub struct HeadlightService {
     #[characteristic(uuid = "73e4b52c-4ae2-4901-b78b-8f95f3a60cdb", write, notify)]
     pub config: [u8; <Config as _TinyDeSized>::SIZE],
 
+    #[characteristic(uuid = "a7e05ec9-ed47-49fe-8b5b-4d030c687032", write)]
+    pub reset: [u8; <Reset as _TinyDeSized>::SIZE],
+
     // diagnostic
     #[characteristic(uuid = "a16bc310-eb50-414e-87b3-2199e79523c2", notify)]
     pub app_error: [u8; <AppErrorData as _TinyDeSized>::SIZE],
@@ -147,6 +150,9 @@ impl BLE {
                         }
                         HeadlightServiceEvent::ConfigWrite(data) => {
                             Config::deserialize(data).map(Config::into)
+                        }
+                        HeadlightServiceEvent::ResetWrite(data) => {
+                            Reset::deserialize(data).map(Reset::into)
                         }
                         _ => return
                     };
