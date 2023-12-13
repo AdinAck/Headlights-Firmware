@@ -17,26 +17,23 @@ use embassy_nrf::{
     peripherals::UARTE0,
 };
 
-mod ble;
-mod command_ext;
-mod command_reader;
-mod command_writer;
+mod command;
 mod fmt;
-mod uart;
+mod utils;
 
-use ble::BLE;
-use command_reader::receive_command_worker;
-use command_writer::{send_command_worker, WriterQueue};
+use command::reader::receive_command_worker;
+use command::writer::{send_command_worker, WriterQueue};
 use common::{
-    assign_resources, command_reader::HeadlightCommandReader,
-    command_writer::HeadlightCommandWriter,
+    assign_resources,
+    command::{reader::HeadlightCommandReader, writer::HeadlightCommandWriter},
 };
 #[cfg(not(feature = "defmt"))]
 use cortex_m::peripheral::SCB;
 #[cfg(not(feature = "defmt"))]
 use cortex_m_rt::exception;
 use embassy_nrf::peripherals;
-use uart::setup_uart;
+use utils::ble::BLE;
+use utils::uart::setup_uart;
 
 static SEND_QUEUE: WriterQueue = WriterQueue::new();
 

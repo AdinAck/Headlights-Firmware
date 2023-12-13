@@ -1,13 +1,16 @@
-#![no_std]
+#![cfg_attr(target_os = "none", no_std)]
 
-pub mod assign_resources;
-pub mod bundles;
+#[cfg(not(target_os = "none"))]
+uniffi::include_scaffolding!("lib");
+
+#[cfg(not(target_os = "none"))]
+pub mod std_serde_impls;
+
 pub mod command;
-pub mod command_reader;
-pub mod command_writer;
 mod fmt;
-mod scan_buf;
+pub mod properties;
 pub mod types;
+pub mod utils;
 
 use crc::{Crc, CRC_8_AUTOSAR};
 use types::CRCRepr;

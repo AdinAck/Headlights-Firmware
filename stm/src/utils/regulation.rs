@@ -1,10 +1,9 @@
 use crate::{
     fmt::{error, info},
-    limits::EPSILON,
     FaultLEDPin, HBEnablePin, MeasureResources, PWMTimer,
 };
-use common::types::{
-    Config, Control, Error as HeadlightError, Mode, Monitor, RuntimeError, Status,
+use common::{
+    command::commands::*, properties::PROPERTIES, types::*, utils::thermistor::celsius_to_sample,
 };
 use core::cmp::min;
 use embassy_stm32::{
@@ -17,10 +16,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Duration, Ticker};
 use pid::PIDController;
 
-use super::{
-    adc::{mv_to_ma, sample_to_mv},
-    thermistor::celsius_to_sample,
-};
+use super::adc::{mv_to_ma, sample_to_mv};
 
 pub struct RegulatorHardware<'a> {
     pub adc: Adc<'a, ADC>,
@@ -84,6 +80,7 @@ pub struct Regulator<'a> {
     pid: PIDController<i32>,
 
     max_target: u16,
+    max_current: u16,
     max_duty: u16,
     throttle_start: u16,
     throttle_stop: u16,
@@ -104,7 +101,8 @@ impl<'a> Regulator<'a> {
                 (config.pwm_freq.div_ceil(config.gain.into())).into(),
                 config.pwm_freq.into(),
             ),
-            max_target: config.abs_max_load_current,
+            max_target: config.max_target_current,
+            max_current: config.abs_max_load_current,
             max_duty,
             throttle_start: celsius_to_sample(config.throttle_start),
             throttle_stop: celsius_to_sample(config.throttle_stop),
@@ -137,7 +135,7 @@ impl<'a> Regulator<'a> {
         temperature: u16,
         duty: u16,
     ) -> Option<RuntimeError> {
-        if current > self.max_target + EPSILON {
+        if current > self.max_current + PROPERTIES.max_adc_error {
             // current is sufficiently over max target to be considered unsafe
             Some(RuntimeError::Overcurrent)
         } else if current < target && duty == self.max_duty {
@@ -180,11 +178,15 @@ impl<'a> Regulator<'a> {
         prev_duty: u16,
     ) -> Result<u16, RuntimeError> {
         if let Some(delta) = self.pid.run(target.into(), current.into()) {
-            if delta > 0 {
-                // if pid has decided to go up, we hit the lower current bound
+            if current < *lower || delta > 0 {
+                // if pid has decided to go up or recent current
+                // is less than lower, we hit the lower current bound
                 *lower = current;
-            } else if delta < 0 {
-                // if pid has decided to go down, we hit the upper current bound
+            }
+
+            if current > *upper || delta < 0 {
+                // if pid has decided to go down or recent current
+                // is greater than upper, we hit the upper current bound
                 *upper = current;
             }
 
@@ -211,9 +213,7 @@ impl<'a> Regulator<'a> {
         let mut ticker = Ticker::every(Duration::from_ticks(4));
 
         let error = loop {
-            // get a reading (current and temp)
             if let Some((current, temperature)) = self.get_reading().await {
-                // check for any fault from reading
                 if let Some(error) = self.check_fault(current, control.target, temperature, duty) {
                     break Some(error);
                 }

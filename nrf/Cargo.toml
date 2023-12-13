@@ -44,8 +44,10 @@ heapless = "0.8.0"
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
 pattern = { git = "https://github.com/AdinAck/pattern", branch = "main" }
 crc = "3.0.1"
-common = { path = "../common" }
 static_cell = "2.0.0"
+common = { path = "../common" }
+embedded-storage = { version = "0.3.0" }
+embedded-storage-async = { version = "0.4.0" }
 
 [[bin]]
 name = "nrf"
@@ -70,3 +72,5 @@ embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "872f1ec4c
 embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "872f1ec4c2bae370e10366b72e601f64b0008da3" }
 embassy-nrf = { git = "https://github.com/embassy-rs/embassy", rev = "872f1ec4c2bae370e10366b72e601f64b0008da3" }
 nrf-softdevice-s140 = { git = "https://github.com/embassy-rs/nrf-softdevice", rev = "3f57e8fd39a0312c3667b501c4c8f54e155ae2c1" }
+embedded-storage-async = { git = "https://github.com/rust-embedded-community/embedded-storage", rev = "3fddbf775528138554b83ab01cbd3264edfaf8f3" }
+embedded-storage = { git = "https://github.com/rust-embedded-community/embedded-storage", rev = "3fddbf775528138554b83ab01cbd3264edfaf8f3" }

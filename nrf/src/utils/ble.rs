@@ -1,8 +1,8 @@
 use crate::{
-    command_writer::WriterQueue,
+    command::writer::WriterQueue,
     fmt::{error, info, unwrap},
 };
-use common::{bundles::ToHeadlightBundle, types::*};
+use common::{command::commands::*, properties::PROPERTIES, utils::bundles::ToHeadlightBundle};
 use core::mem;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
@@ -33,10 +33,13 @@ static MODEL: StaticCell<BLE> = StaticCell::new();
 
 #[nrf_softdevice::gatt_service(uuid = "0b2adcf1-38a7-48f9-a61d-8311fe471b70")]
 pub struct HeadlightService {
+    #[characteristic(uuid = "939f1423-2a0f-4a87-931f-5dae0b1ded7a", read)]
+    pub properties: [u8; <Properties as _TinyDeSized>::SIZE],
+
     #[characteristic(uuid = "9a00bcc5-89f1-4b9d-88bd-f2033440a5b4", write)]
     pub request: [u8; <Request as _TinyDeSized>::SIZE],
 
-    // responses
+    // endpoints
     #[characteristic(uuid = "ccf82e46-5f1c-4671-b481-7ffd2854fed4", notify)]
     pub status: [u8; <Status as _TinyDeSized>::SIZE],
 
@@ -54,7 +57,7 @@ pub struct HeadlightService {
 
     // diagnostic
     #[characteristic(uuid = "a16bc310-eb50-414e-87b3-2199e79523c2", notify)]
-    pub app_error: [u8; <AppErrorData as _TinyDeSized>::SIZE],
+    pub app_error: [u8; <AppError as _TinyDeSized>::SIZE],
 }
 
 #[nrf_softdevice::gatt_server]
@@ -103,11 +106,23 @@ impl BLE {
 
         let sd = Softdevice::enable(&sd_config);
 
-        let server = unwrap!(Server::new(sd));
+        let mut server = unwrap!(Server::new(sd));
+
+        Self::set_version(&mut server);
 
         spawner.must_spawn(softdevice_task(sd));
 
         MODEL.init(BLE::new(sd, server))
+    }
+
+    fn set_version(server: &mut Server) {
+        match server.headlight.properties_set(&PROPERTIES.serialize()) {
+            Ok(_) => {}
+            Err(e) => {
+                // i can't think of anything that would cause this
+                error!("Failed to set properties with error: {}.", e);
+            }
+        }
     }
 
     pub async fn get_conn(&self) -> Option<Connection> {
@@ -160,13 +175,13 @@ impl BLE {
                     if let Some(bundle) = bundle {
                         if queue.try_send(bundle).is_err() { // only possible error is it's full
                             error!("Command ingestion channel overflowed (commands are being received faster than they can be dispatched).");
-                            self.server.headlight.app_error_notify(&conn, &AppErrorData::TooFast.serialize()).ok();
+                            self.server.headlight.app_error_notify(&conn, &AppError::TooFast.serialize()).ok();
                         }
                     } else {
                         error!("Invalid BLE packet received (command could not be serialized from received bytes).");
                         self.server
                             .headlight
-                            .app_error_notify(&conn, &AppErrorData::InvalidPacket.serialize())
+                            .app_error_notify(&conn, &AppError::InvalidPacket.serialize())
                             .ok();
                     }
                 }

@@ -1,11 +1,9 @@
-use crate::command::HeadlightCommand;
 use tiny_serde::{prelude::*, Deserialize, Serialize};
 use tiny_serde_macros::{Deserialize, Serialize};
 
 #[cfg(feature = "defmt")]
 use defmt::Format;
 
-// types
 pub type CRCRepr = u8;
 pub type CommandID = u8;
 
@@ -16,6 +14,7 @@ pub struct CommandHeader {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[cfg_attr(feature = "defmt", derive(Format))]
 #[repr(u8)]
 pub enum ConfigError {
@@ -27,6 +26,7 @@ pub enum ConfigError {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[cfg_attr(feature = "defmt", derive(Format))]
 #[repr(u8)]
 pub enum RuntimeError {
@@ -38,27 +38,34 @@ pub enum RuntimeError {
 }
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[repr(u8)]
-pub enum Error {
+/// cannot be named "Error" because of Swift :/
+pub enum HeadlightError {
     #[default]
     None = 0x00,
-    Config(ConfigError) = 0x20,
-    Runtime(RuntimeError) = 0x30,
+    Config {
+        e: ConfigError,
+    } = 0x20,
+    Runtime {
+        e: RuntimeError,
+    } = 0x30,
 }
 
-impl From<ConfigError> for Error {
+impl From<ConfigError> for HeadlightError {
     fn from(value: ConfigError) -> Self {
-        Self::Config(value)
+        Self::Config { e: value }
     }
 }
 
-impl From<RuntimeError> for Error {
+impl From<RuntimeError> for HeadlightError {
     fn from(value: RuntimeError) -> Self {
-        Self::Runtime(value)
+        Self::Runtime { e: value }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[repr(u8)]
 pub enum Mode {
     #[default]
@@ -68,111 +75,25 @@ pub enum Mode {
     Fault = 0xf3,
 }
 
-// diagnostic -- should not occur in prod
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[repr(u8)]
-pub enum AppErrorData {
-    None = 0x00,
-    /// app sent a packet that could not be serialized
-    InvalidPacket = 0x10,
-    /// command built from app data could not be sent
-    SendFault = 0x11,
-    /// app sent a command before the previous finished dispatching
-    TooFast = 0x12,
-}
-
-#[derive(Serialize, Deserialize)]
-#[repr(u8)]
-pub enum Request {
-    Status = Status::ID,
-    Control = Control::ID,
-    Monitor = Monitor::ID,
-    Config = Config::ID,
-}
-
-impl HeadlightCommand for Request {
-    const ID: CommandID = 0x10;
-}
-
-#[derive(Clone, Copy, Default, Serialize, Deserialize)]
-pub struct Status {
-    pub mode: Mode,
-    pub error: Error,
-}
-
-impl HeadlightCommand for Status {
-    const ID: CommandID = 0x1f;
+pub enum Hardware {
+    V2Rev0,
+    V2Rev1,
+    V2Rev3,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "defmt", derive(Format))]
-pub struct Control {
-    pub target: u16,
-}
-
-impl HeadlightCommand for Control {
-    const ID: CommandID = 0xaa;
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Monitor {
-    /// Duty cycle of regulation PWM
-    pub duty: u16,
-    /// Upper load current
-    pub upper_current: u16,
-    /// Lower load current
-    pub lower_current: u16,
-    /// Temperature of FETs (not load)
-    pub temperature: u16,
-}
-
-impl HeadlightCommand for Monitor {
-    const ID: CommandID = 0xab;
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "defmt", derive(Format))]
-pub struct Config {
-    /// Indicates whether or not to begin regulation
-    pub enabled: bool,
-    /// Default control scheme before any user control
-    pub startup_control: Control,
-    /// The gain or sensitivity of the regulation feedback loop
-    pub gain: u8,
-    /// Frequency of PWM control signal for regulation
-    pub pwm_freq: u16,
-    /// User-defined maximum regulation current for the load
-    pub abs_max_load_current: u16,
-    /// Temperature to start throttling at
-    pub throttle_start: u8,
-    /// Temperature to stop throttling at (overheating)
-    pub throttle_stop: u8,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            startup_control: Control { target: 50 },
-            gain: 1,
-            pwm_freq: 300,
-            abs_max_load_current: 100,
-            throttle_start: 50,
-            throttle_stop: 60,
-        }
-    }
-}
-
-impl HeadlightCommand for Config {
-    const ID: CommandID = 0xac;
-}
-
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Enum))]
 #[repr(u8)]
-pub enum Reset {
-    Now,
+pub enum Firmware {
+    V0P1,
 }
 
-impl HeadlightCommand for Reset {
-    const ID: CommandID = 0xff;
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(not(target_os = "none"), derive(uniffi::Record))]
+pub struct Version {
+    pub hw: Hardware,
+    pub fw: Firmware,
 }

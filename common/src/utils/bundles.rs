@@ -1,4 +1,7 @@
-use crate::{command::HeadlightCommand, command_reader::ParseCommandBundle, types::*};
+use crate::{
+    command::{commands::*, reader::ParseCommandBundle},
+    types::{CRCRepr, CommandID},
+};
 use bundle::bundle;
 use crc::Digest;
 use pattern::{Pattern, PatternError};

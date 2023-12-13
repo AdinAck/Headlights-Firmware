@@ -1,4 +1,6 @@
-use common::types::{Config, ConfigError, Error as HeadlightError, RuntimeError};
+use common::{
+    command::commands::*, properties::PROPERTIES, types::*, utils::thermistor::celsius_to_sample,
+};
 #[cfg(feature = "defmt")]
 use defmt::Format;
 use embassy_stm32::{
@@ -9,11 +11,8 @@ use tiny_serde::{prelude::*, Deserialize, Serialize};
 
 use crate::{
     fmt::{error, info, trace, unwrap, warn},
-    limits::{ABS_MAX_MA, ABS_MAX_TEMP, MAX_PWM_FREQ, MIN_PWM_FREQ},
     FaultLEDPin,
 };
-
-use super::thermistor::celsius_to_sample;
 
 const CONFIG_SECTOR: u32 = 31;
 const KIBBI: u32 = 1024;
@@ -46,23 +45,23 @@ pub struct ValidatedConfig {
 impl TryFrom<Config> for ValidatedConfig {
     type Error = ConfigError;
     fn try_from(config: Config) -> Result<Self, Self::Error> {
-        (MIN_PWM_FREQ..=MAX_PWM_FREQ)
+        (PROPERTIES.min_pwm_freq..=PROPERTIES.max_pwm_freq)
             .contains(&config.pwm_freq)
             .then_some(())
             .ok_or(ConfigError::PWMFreq)?;
 
-        (config.abs_max_load_current < ABS_MAX_MA)
+        (config.abs_max_load_current < PROPERTIES.abs_max_ma)
             .then_some(())
             .ok_or(ConfigError::MaxTarget)?;
 
-        (config.startup_control.target <= config.abs_max_load_current)
+        (config.startup_control.target <= config.max_target_current)
             .then_some(())
             .ok_or(ConfigError::StartupTarget)?;
 
         (config.gain >= 1).then_some(()).ok_or(ConfigError::Gain)?;
 
         (config.throttle_start < config.throttle_stop
-            && celsius_to_sample(config.throttle_stop) < ABS_MAX_TEMP)
+            && celsius_to_sample(config.throttle_stop) < PROPERTIES.abs_max_temp)
             .then_some(())
             .ok_or(ConfigError::ThrottleBounds)?;
 
@@ -129,7 +128,7 @@ impl<'a> Configurator<'a> {
                         e
                     );
 
-                    error = Some(HeadlightError::Config(e));
+                    error = Some(HeadlightError::Config { e });
 
                     Config::default().try_into()
                 }

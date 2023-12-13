@@ -1,7 +1,7 @@
-use common::types::{Config, Control, Error as HeadlightError, Mode, Monitor, Status};
+use common::{command::commands::*, types::*};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
-use crate::{command::writer::WriterQueue, fmt::info};
+use crate::command::writer::WriterQueue;
 
 use super::{
     config::{Configurator, ValidatedConfig},
@@ -52,11 +52,13 @@ impl Model {
         lock.mode.clone()
     }
 
-    pub async fn set_mode(&self, mode: Mode) {
+    pub async fn set_mode(&self, mode: Mode, notify: bool) {
         let mut lock = self.status.lock().await;
         lock.mode = mode;
 
-        self.send_queue.send(lock.clone().into()).await;
+        if notify {
+            self.send_queue.send(lock.clone().into()).await;
+        }
     }
 
     pub async fn get_error(&self) -> HeadlightError {
@@ -64,11 +66,13 @@ impl Model {
         lock.error.clone()
     }
 
-    pub async fn set_error(&self, error: HeadlightError) {
+    pub async fn set_error(&self, error: HeadlightError, notify: bool) {
         let mut lock = self.status.lock().await;
         lock.error = error;
 
-        self.send_queue.send(lock.clone().into()).await;
+        if notify {
+            self.send_queue.send(lock.clone().into()).await;
+        }
     }
 
     pub async fn get_control(&self) -> Control {
@@ -78,12 +82,14 @@ impl Model {
 
     // wrap on top of regulator proxy
 
-    pub async fn set_control(&self, control: Control) {
+    pub async fn set_control(&self, control: Control, notify: bool) {
         let mut lock = self.control.lock().await;
         *lock = control;
         self.regulator_proxy.set_control(lock.clone());
 
-        self.send_queue.send(lock.clone().into()).await;
+        if notify {
+            self.send_queue.send(lock.clone().into()).await;
+        }
     }
 
     pub async fn get_monitor_immediately(&self) -> Option<Monitor> {
@@ -97,13 +103,25 @@ impl Model {
     pub async fn observe_regulator(&self) -> ! {
         loop {
             let status = self.regulator_proxy.wait_for_new_status().await;
-            self.set_mode(status.mode).await;
-            self.set_error(status.error).await;
+            self.set_mode(status.mode, true).await;
+            self.set_error(status.error, true).await;
         }
     }
 }
 
 #[embassy_executor::task]
 pub async fn model_worker(model: &'static Model) -> ! {
+    // notify status on startup
+    model
+        .send_queue
+        .send(
+            Status {
+                mode: model.get_mode().await,
+                error: model.get_error().await,
+            }
+            .into(),
+        )
+        .await;
+
     model.observe_regulator().await
 }

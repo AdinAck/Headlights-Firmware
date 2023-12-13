@@ -1,5 +1,7 @@
-use common::command_writer::HeadlightCommandWriter;
-use common::{bundles::ToHeadlightBundle, use_to_headlight_bundle};
+use common::{
+    command::writer::HeadlightCommandWriter, use_to_headlight_bundle,
+    utils::bundles::ToHeadlightBundle,
+};
 use embassy_nrf::{
     buffered_uarte::BufferedUarteTx,
     peripherals::{TIMER1, UARTE0},

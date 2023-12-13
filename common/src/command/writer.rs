@@ -1,4 +1,4 @@
-use crate::{command::HeadlightCommand, types::CommandHeader, CRC};
+use crate::{command::commands::HeadlightCommand, types::CommandHeader, CRC};
 use embedded_io_async::{ErrorType, Write};
 use tiny_serde::Serialize;
 
@@ -32,8 +32,8 @@ where
             crc: digest.finalize(),
         };
 
-        self.tx.write(&header.serialize()).await?;
-        self.tx.write(&payload).await?;
+        self.tx.write_all(&header.serialize()).await?;
+        self.tx.write_all(&payload).await?;
 
         Ok(())
     }

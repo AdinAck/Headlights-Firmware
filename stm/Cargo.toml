@@ -31,6 +31,8 @@ common = { path = "../common" }
 pid = { git = "https://github.com/AdinAck/pid", branch = "main" }
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
 tiny-serde-macros = { git = "https://github.com/AdinAck/tiny-serde-macros", branch = "main" }
+embedded-storage = { version = "0.3.0" }
+embedded-storage-async = { version = "0.4.0" }
 
 [[bin]]
 name = "stm"
@@ -55,3 +57,5 @@ embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "5bc755
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "5bc75578260f4c644cc060e6458a05d7fc0ffb41" }
 embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "5bc75578260f4c644cc060e6458a05d7fc0ffb41" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", rev = "5bc75578260f4c644cc060e6458a05d7fc0ffb41" }
+embedded-storage-async = { git = "https://github.com/rust-embedded-community/embedded-storage", rev = "3fddbf775528138554b83ab01cbd3264edfaf8f3" }
+embedded-storage = { git = "https://github.com/rust-embedded-community/embedded-storage", rev = "3fddbf775528138554b83ab01cbd3264edfaf8f3" }

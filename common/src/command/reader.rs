@@ -1,7 +1,9 @@
+use core::future::Future;
+
 use crate::{
-    fmt::{error, warn},
-    scan_buf::ScanBuf,
+    fmt::warn,
     types::{CRCRepr, CommandHeader, CommandID},
+    utils::scan_buf::ScanBuf,
     CRC,
 };
 use crc::Digest;
@@ -40,12 +42,12 @@ where
         }
     }
 
-    pub async fn poll(&mut self) -> Result<(), <HWReader as ErrorType>::Error> {
+    async fn poll(&mut self) -> Result<(), <HWReader as ErrorType>::Error> {
         let incoming = self.rx.fill_buf().await?;
         let n = incoming.len();
 
         if self.buf.push_slice(incoming).is_err() {
-            error!("Incoming UART buffer full, data is being lost.");
+            // error!("Incoming UART buffer full, data is being lost.");
             self.buf.clear();
         }
 
@@ -96,7 +98,7 @@ where
         }
     }
 
-    pub fn recognizes<Bundle>(&mut self) -> Option<Bundle>
+    fn recognizes<Bundle>(&mut self) -> Option<Bundle>
     where
         Bundle: ParseCommandBundle,
     {
@@ -114,6 +116,24 @@ where
                 None
             }
             Err(PatternError::NotFound) => None,
+        }
+    }
+
+    pub async fn dispatch<F, Fut, Bundle>(&mut self, mut f: F)
+    where
+        F: FnMut(Bundle) -> Fut,
+        Fut: Future<Output = ()>,
+        Bundle: ParseCommandBundle,
+    {
+        loop {
+            if let Err(_) = self.poll().await {
+                // error!("Command reader failed to poll with error: {}", e);
+                return;
+            }
+
+            if let Some(bundle) = self.recognizes() {
+                f(bundle).await
+            }
         }
     }
 }

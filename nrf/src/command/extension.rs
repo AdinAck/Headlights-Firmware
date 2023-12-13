@@ -1,5 +1,5 @@
-use crate::ble::Server;
-use common::types::*;
+use crate::utils::ble::Server;
+use common::command::commands::*;
 #[cfg(feature = "defmt")]
 use defmt::Format;
 use nrf_softdevice::ble::{gatt_server::NotifyValueError, Connection};

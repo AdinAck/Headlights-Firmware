@@ -5,8 +5,14 @@ edition = "2021"
 
 [features]
 defmt = [
-    "embedded-io-async/defmt-03"
+    "dep:defmt",
+    "pattern/defmt",
+    "embedded-io-async/defmt-03",
 ]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "common"
 
 [dependencies]
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
@@ -16,4 +22,10 @@ bundle = { git = "https://github.com/AdinAck/bundle", branch = "main" }
 embedded-io-async = "0.6.0"
 crc = "3.0.1"
 heapless = "0.8.0"
-defmt = "0.3"
+defmt = { version = "0.3.5", optional = true }
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
+uniffi = "0.25"
+
+[build-dependencies]
+uniffi = { version = "0.25", features = ["build"] }

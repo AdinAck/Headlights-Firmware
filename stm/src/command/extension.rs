@@ -1,4 +1,4 @@
-use common::types::{Config, Control, Request, Reset, RuntimeError, Status};
+use common::{command::commands::*, types::RuntimeError};
 use cortex_m::peripheral::SCB;
 
 use crate::{
@@ -42,7 +42,7 @@ impl Execute for Request {
 
 impl Execute for Control {
     async fn run(self, model: &Model) -> Result<(), Error> {
-        model.set_control(self).await;
+        model.set_control(self, false).await;
         Ok(())
     }
 }
@@ -58,16 +58,16 @@ impl Execute for Config {
                 match lock.write_config(valid_config) {
                     Ok(_) => {
                         info!("Config write complete, resetting!");
-                        Reset::Now.run(model).await.ok(); // infallible
+                        SCB::sys_reset()
                     }
                     Err(e) => {
-                        model.set_error(RuntimeError::Flash.into()).await;
+                        model.set_error(RuntimeError::Flash.into(), true).await;
                         error!("Failed to write config with error: {}.", e);
                     }
                 }
             }
             Err(e) => {
-                model.set_error(e.into()).await;
+                model.set_error(e.into(), true).await;
                 warn!("Received config was invalid for reason: {}.", e);
             }
         }
@@ -77,9 +77,10 @@ impl Execute for Config {
 }
 
 impl Execute for Reset {
-    async fn run(self, _model: &Model) -> Result<(), Error> {
+    async fn run(self, model: &Model) -> Result<(), Error> {
         match self {
             Self::Now => SCB::sys_reset(),
+            Self::Factory => Config::default().run(model).await,
         }
     }
 }

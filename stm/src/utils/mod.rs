@@ -4,5 +4,4 @@ pub mod hb;
 pub mod model;
 pub mod regulation;
 pub mod status;
-pub mod thermistor;
 pub mod uart;

@@ -29,9 +29,8 @@ use {defmt_rtt as _, panic_probe as _};
 
 use common::{
     assign_resources,
-    command_reader::HeadlightCommandReader,
-    command_writer::HeadlightCommandWriter,
-    types::{Mode, Status},
+    command::{commands::*, reader::HeadlightCommandReader, writer::HeadlightCommandWriter},
+    types::Mode,
 };
 use embassy_executor::{Executor, InterruptExecutor};
 use embassy_stm32::{
@@ -46,7 +45,6 @@ use embassy_stm32::{interrupt, usart};
 
 mod command;
 mod fmt;
-mod limits;
 mod utils;
 
 #[cfg(not(feature = "defmt"))]

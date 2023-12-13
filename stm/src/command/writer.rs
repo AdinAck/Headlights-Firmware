@@ -1,5 +1,6 @@
 use common::{
-    bundles::FromHeadlightBundle, command_writer::HeadlightCommandWriter, use_from_headlight_bundle,
+    command::writer::HeadlightCommandWriter, use_from_headlight_bundle,
+    utils::bundles::FromHeadlightBundle,
 };
 use embassy_stm32::{peripherals::USART1, usart::BufferedUartTx};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
