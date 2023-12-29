@@ -226,7 +226,6 @@ impl<T, E> Try for Result<T, E> {
     }
 }
 
-#[allow(unused)]
 pub(crate) struct Bytes<'a>(pub &'a [u8]);
 
 #[cfg(feature = "defmt")]
@@ -237,8 +236,17 @@ impl<'a> defmt::Format for Bytes<'a> {
 }
 
 pub(crate) use _warn as warn;
+pub(crate) use assert;
 pub(crate) use assert_eq;
+pub(crate) use assert_ne;
+pub(crate) use debug;
+pub(crate) use debug_assert;
+pub(crate) use debug_assert_eq;
+pub(crate) use debug_assert_ne;
 pub(crate) use error;
 pub(crate) use info;
+pub(crate) use panic;
+pub(crate) use todo;
 pub(crate) use trace;
+pub(crate) use unreachable;
 pub(crate) use unwrap;
