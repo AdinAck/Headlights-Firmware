@@ -24,5 +24,13 @@ The structures defining this behavior are shared between both binaries, so it is
 
 A CRC is used to validate commands, and commands are dispatched statically so no global allocator is needed.
 
+# BLE
+
+Rather than the classic "pipe" model most bluetooth interfaces use where there is one characteristic for bytes sent and one for bytes received (basically a wireless UART). I designed a BLE stack that fully utilized BLE. Every piece of exchangable data has it's own characteristic, with appropriate read and write permissions.
+
+Some of these characteristics, like the current state or error code of the device are notifying, so the phone (without even asking) will be informed of important information as it occurs.
+
+This model is extremely powerful as it is scalable, event driven, and declarative (read more in the [app](https://github.com/AdinAck/Headlights-App) repo).
+
 ---
 [Hardware](https://github.com/AdinAck/Headlights-Hardware) | [App](https://github.com/AdinAck/Headlights-App)
