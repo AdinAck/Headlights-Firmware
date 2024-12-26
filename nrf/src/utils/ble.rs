@@ -7,27 +7,19 @@ use core::mem;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use nrf_softdevice::{
-    ble::{gatt_server, peripheral as ble_peripheral, Connection, Phy},
+    ble::{
+        advertisement_builder::{AdvertisementData, Complete128, CustomService, Flag, ShortName},
+        gatt_server, peripheral as ble_peripheral, Connection, Phy,
+    },
     generate_adv_data, raw, Softdevice,
 };
 use static_cell::StaticCell;
 use tiny_serde::{prelude::*, Deserialize, Serialize};
-
-const ADV_DATA: &[u8] = generate_adv_data! {
-    flags: (LE_Only, GeneralDiscovery),
-    services: Complete128(Custom("0b2adcf1-38a7-48f9-a61d-8311fe471b70")),
-    short_name: "HLV2"
-};
+use uuid::uuid;
 
 const SCAN_DATA: &[u8] = generate_adv_data! {
     full_name: "Headlights V2"
 };
-
-const ADV: ble_peripheral::ConnectableAdvertisement<'static> =
-    ble_peripheral::ConnectableAdvertisement::ScannableUndirected {
-        adv_data: ADV_DATA,
-        scan_data: SCAN_DATA,
-    };
 
 static MODEL: StaticCell<BLE> = StaticCell::new();
 
@@ -146,9 +138,31 @@ impl BLE {
             ..Default::default()
         };
 
+        // let adv_data = generate_adv_data! {
+        //     flags: (LE_Only, GeneralDiscovery),
+        //     services: Complete128(Custom("0b2adcf1-38a7-48f9-a61d-8311fe471b70")),
+        //     short_name: "HLV2"
+        // };
+
+        let headlight_service = CustomService(
+            uuid!("0b2adcf1-38a7-48f9-a61d-8311fe471b70")
+                .as_bytes()
+                .clone(),
+        );
+
+        let adv_data = AdvertisementData::new()
+            .flags([Flag::LE_Only, Flag::GeneralDiscovery])
+            .services(Complete128([headlight_service]))
+            .name(ShortName("HLV2"));
+
+        let adv = ble_peripheral::ConnectableAdvertisement::ScannableUndirected {
+            adv_data: adv_data.as_slice(),
+            scan_data: SCAN_DATA,
+        };
+
         loop {
             let conn =
-                unwrap!(ble_peripheral::advertise_connectable(self.sd, ADV, &adv_config).await);
+                unwrap!(ble_peripheral::advertise_connectable(self.sd, adv, &adv_config).await);
 
             self.set_conn(Some(conn.clone())).await;
 

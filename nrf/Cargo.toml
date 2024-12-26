@@ -38,7 +38,7 @@ defmt = "0.3"
 defmt-rtt = "0.4.0"
 panic-probe = { version = "0.3", features= ["print-defmt"] }
 panic-halt = "0.2.0"
-nrf-softdevice = { git = "https://github.com/AdinAck/nrf-softdevice", version = "0.1.0", features = ["nightly", "nrf52840", "s140", "ble-peripheral", "ble-central", "critical-section-impl"] }
+nrf-softdevice = { path = "/Users/adinack/Projects/nrf-softdevice/nrf-softdevice", version = "0.1.0", features = ["nightly", "nrf52840", "s140", "ble-peripheral", "ble-central", "critical-section-impl"] }
 nrf-softdevice-s140 = { version = "0.1.1" }
 heapless = "0.8.0"
 tiny-serde = { git = "https://github.com/AdinAck/tiny-serde", branch = "main" }
@@ -48,6 +48,7 @@ static_cell = "2.0.0"
 common = { path = "../common" }
 embedded-storage = { version = "0.3.0" }
 embedded-storage-async = { version = "0.4.0" }
+uuid = { version = "1.6.1", default-features = false }
 
 [[bin]]
 name = "nrf"
